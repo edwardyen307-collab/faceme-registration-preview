@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-06a</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-page="register">
+  <header class="app-header">
+    <div class="inner">
+      <div class="brand-block">
+        <h1>人臉註冊</h1>
+        <p>預覽模式 · 資料不會寫入 FaceMe</p>
+      </div>
+      <span class="version-badge" aria-label="版本">v2026-11-06a</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="register-heading">
+      <h2 id="register-heading" class="sr-only">註冊表單</h2>
+
+      <div class="preview-note" role="note">
+        此為靜態預覽：姓名與照片僅在本機瀏覽器暫存顯示，<strong>不會上傳、不會呼叫 FaceMe API、不會持久儲存</strong>。
+        請勿輸入真實個資或上傳真實人臉照片。
+      </div>
+
+      <form id="register-form" class="form-grid" novalidate>
+        <div class="field">
+          <label for="full-name">
+            姓名 <span class="required" aria-hidden="true">*</span>
+            <span class="sr-only">（必填）</span>
+          </label>
+          <input
+            type="text"
+            id="full-name"
+            name="fullName"
+            autocomplete="name"
+            required
+            maxlength="80"
+            placeholder="請輸入姓名（預覽用，勿填真實資料）"
+            aria-describedby="name-error name-hint"
+          />
+          <span class="hint" id="name-hint">必填。預覽環境請使用假名。</span>
+          <div class="error" id="name-error" role="alert" aria-live="polite"></div>
+        </div>
+
+        <div class="field">
+          <label for="member-id">
+            員工／訪客編號
+            <span class="hint">選填</span>
+          </label>
+          <input
+            type="text"
+            id="member-id"
+            name="memberId"
+            maxlength="64"
+            placeholder="選填（預覽用）"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="field">
+          <label for="face-photo">人臉照片</label>
+          <div class="photo-box">
+            <p class="hint" id="photo-hint" style="margin-top:0">
+              可從相簿選擇，或在支援的手機上直接開啟相機拍攝。圖片僅以本機 Object URL 顯示縮圖，不會外傳。
+              接受 JPG／PNG／WebP／HEIC，上限 8MB。
+            </p>
+            <input
+              type="file"
+              id="face-photo"
+              name="facePhoto"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
+              capture="user"
+              aria-describedby="photo-hint photo-error"
+            />
+            <div class="photo-actions">
+              <button type="button" class="btn btn-secondary" id="clear-photo">清除照片</button>
+            </div>
+            <div class="preview-wrap" id="photo-preview-wrap">
+              <img id="photo-preview" alt="" />
+            </div>
+            <div class="error" id="photo-error" role="alert" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button type="button" class="btn btn-secondary" id="back-to-notice">返回聲明頁</button>
+          <button type="submit" class="btn btn-primary" id="register-submit">送出註冊</button>
+        </div>
+      </form>
+
+      <div
+        class="result"
+        id="submit-result"
+        role="status"
+        aria-live="polite"
+        tabindex="-1"
+      ></div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06a
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

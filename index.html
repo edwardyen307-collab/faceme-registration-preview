@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-06a</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-page="consent">
+  <header class="app-header">
+    <div class="inner">
+      <div class="brand-block">
+        <h1>人臉資料蒐集個資聲明</h1>
+        <p>FaceMe 註冊前同意流程（靜態預覽）</p>
+      </div>
+      <span class="version-badge" aria-label="版本">v2026-11-06a</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="notice-heading">
+      <div class="draft-banner" role="status">
+        <span class="tag">草稿</span>
+        <span class="tag">範本／待法務確認</span>
+        <span>以下內容為骨架文案，非正式核准版本，請勿作為正式蒐集依據。</span>
+      </div>
+
+      <h2 id="notice-heading" class="sr-only">個資聲明全文</h2>
+      <div
+        class="notice-scroll"
+        tabindex="0"
+        role="region"
+        aria-label="可捲動的個資聲明全文"
+        id="notice-text"
+      >
+        <h2>一、前言</h2>
+        <p>
+          本聲明說明本公司（以下稱「本公司」，正式名稱：
+          <span class="placeholder">【待填寫：公司／機關全名】</span>
+          ）於「人臉辨識註冊／FaceMe 預覽流程」中，蒐集、處理與利用個人資料之方式。
+          本頁為<strong>介面預覽</strong>，文案標示為草稿，尚未經法務確認。
+        </p>
+
+        <h2>二、蒐集目的</h2>
+        <p>個人資料之蒐集目的包括（草案）：</p>
+        <ul>
+          <li>身分識別與門禁／到訪管理（特定目的分類請依實際業務填寫）。</li>
+          <li>人臉特徵比對，以完成註冊與後續核驗。</li>
+          <li>資安稽核、爭議處理與法令遵循。</li>
+          <li>其他：<span class="placeholder">【待填寫：補充目的】</span></li>
+        </ul>
+
+        <h2>三、蒐集之資料項目</h2>
+        <ul>
+          <li>識別類：姓名；員工／訪客編號（若有提供）。</li>
+          <li>生物特徵／影像類：<strong>人臉影像</strong>及據此產生之人臉特徵資料。</li>
+          <li>其他作業紀錄：註冊時間、裝置／瀏覽器資訊（正式環境如有蒐集須另述）。</li>
+          <li>本預覽版<strong>不會</strong>將上述資料傳至伺服器或 FaceMe API。</li>
+        </ul>
+
+        <h2>四、利用期間、地區、對象及方式</h2>
+        <ul>
+          <li>
+            利用期間：
+            <span class="placeholder">【待填寫：例如自蒐集日起 ○ 年，或至特定關係終止後 ○ 年】</span>
+          </li>
+          <li>
+            利用地區：
+            <span class="placeholder">【待填寫：中華民國／其他處理所在地】</span>
+          </li>
+          <li>
+            利用對象：本公司、受託處理之資訊服務廠商（含人臉辨識服務供應商，正式名稱待填）、
+            及依法有權機關。
+          </li>
+          <li>
+            利用方式：以電子檔案儲存、比對、傳輸、備份與刪除等自動化或非自動化方式處理；
+            正式環境之保存與刪除程序須另訂。
+          </li>
+        </ul>
+
+        <h2>五、當事人權利</h2>
+        <p>依《個人資料保護法》，您得行使下列權利（行使方式待正式公告）：</p>
+        <ul>
+          <li>查詢或請求閱覽。</li>
+          <li>請求製給複製本。</li>
+          <li>請求補充或更正。</li>
+          <li>請求停止蒐集、處理或利用。</li>
+          <li>請求刪除。</li>
+        </ul>
+        <p>
+          聯絡窗口：
+          <span class="placeholder">【待填寫：單位／姓名／電話／Email】</span>
+        </p>
+
+        <h2>六、不提供資料之影響</h2>
+        <p>
+          若您不提供姓名或人臉影像等必要資料，本公司可能無法完成人臉註冊或相關身分核驗服務，
+          進而無法提供對應之門禁／到訪等功能。選填欄位不影響基本註冊資格之判定方式，
+          以正式辦法為準。
+        </p>
+
+        <h2>七、其他說明</h2>
+        <ul>
+          <li>本預覽僅供畫面確認；勾選同意僅存於瀏覽器 <code>sessionStorage</code>，關閉分頁後即失效。</li>
+          <li>請勿於預覽環境輸入真實個資或上傳真實人臉照片。</li>
+          <li>正式上線前，聲明全文須經法務審核並替換所有「待填寫」欄位。</li>
+        </ul>
+      </div>
+
+      <div class="consent-bar">
+        <div class="inner">
+          <form id="consent-form" novalidate>
+            <div class="checkbox-row">
+              <input type="checkbox" id="consent-check" name="consent" />
+              <label for="consent-check">我已閱讀並同意上述個資聲明</label>
+            </div>
+            <button type="submit" class="btn btn-primary" id="consent-submit" disabled>
+              確認送出
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06a
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

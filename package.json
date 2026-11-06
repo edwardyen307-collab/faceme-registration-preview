@@ -1,0 +1,20 @@
+{
+  "name": "faceme-registration-preview",
+  "version": "1.0.0",
+  "description": "FaceMe registration privacy notice static preview (GitHub Pages)",
+  "main": "app.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node tests/run-checks.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  },
+  "private": true
+}
