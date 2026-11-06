@@ -396,3 +396,76 @@ textarea:focus-visible,
   white-space: nowrap;
   border: 0;
 }
+
+.mode-banner {
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+  border: 1px solid var(--line);
+}
+
+.mode-mock {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.mode-real {
+  background: #ecfdf3;
+  color: #066;
+  border-color: #abefc6;
+}
+
+.mode-blocked {
+  background: #fef3f2;
+  color: #b42318;
+  border-color: #fecdca;
+}
+
+.settings-card {
+  margin-bottom: 1rem;
+}
+
+.settings-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  color: var(--brand);
+}
+
+.api-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.api-row input[type="url"] {
+  flex: 1 1 220px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+}
+
+.api-row .btn {
+  width: auto;
+  padding: 0.65rem 0.9rem;
+}
+
+.api-status {
+  margin-top: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.api-status.error {
+  color: var(--danger);
+}
+
+.result-error {
+  background: #fef3f2 !important;
+  color: var(--danger) !important;
+  border-color: #fecdca !important;
+}

@@ -1,76 +1,117 @@
-# FaceMe 註冊前個資聲明（靜態預覽）
+# FaceMe 註冊前個資聲明 + 內網薄後端代理
 
-繁體中文靜態網頁預覽：**個資聲明 → 同意後進入註冊表單**。  
-**不串接 FaceMe Central API、無後端、不上傳／不持久儲存**姓名或人臉照片。
+版本：**v2026-11-06b**
 
-- 線上預覽：https://edwardyen307-collab.github.io/faceme-registration-preview/
-- 版本：`v2026-11-06a`（頁面標題與右上角徽章）
+繁體中文靜態前端（GitHub Pages 可預覽 Mock）＋可選 **Node 內網薄後端**，依**對方提供的 API 說明**代理 FaceMe Security Central。  
+**本環境未連線真實 Central；API 回應形狀為依規格假設，待內網驗證後再調整 adapters／fixtures。**
+
+- 公開 Mock 預覽：https://edwardyen307-collab.github.io/faceme-registration-preview/
 - Repo：https://github.com/edwardyen307-collab/faceme-registration-preview
+- 假設規格來源：Central `https://192.168.32.220`（:443）、Swagger `https://192.168.32.220/swagger-ui/doc.html`（僅內網）
 
-## 頁面流程
+> **不要**把 GitHub Pages 說成能直連 Central。Pages 是公網 HTTPS；瀏覽器無法可靠存取私網 IP，且 `https` 頁呼叫 `http://192…` 會 mixed content。真實註冊請用內網 **HTTPS 同源**（薄後端 serve 靜態 + `/api`）。
 
-1. `index.html`（首頁／個資聲明）
-   - 可捲動聲明全文，標示「草稿」「範本／待法務確認」
-   - Checkbox「我已閱讀並同意上述個資聲明」（預設未勾）
-   - 「確認送出」未勾選時 disabled；勾選後可進入註冊頁
-   - 同意狀態寫入 `sessionStorage` key：`faceme_privacy_consent_v1`（值 `1`）
-2. `register.html`（註冊預覽）
-   - 若未同意直接開啟，會導回 `index.html`
-   - 姓名必填；員工／訪客編號選填
-   - 人臉照片：檔案選擇或手機相機（`capture="user"`），本機 Object URL 縮圖，不外傳
-   - 「送出註冊」僅顯示：`已送出（預覽模式，尚未寫入 FaceMe）`
-   - 可返回聲明頁
+## 兩種前端模式
 
-## 如何修改聲明文案
+| 模式 | 條件 | 行為 |
+|------|------|------|
+| **Mock 預覽** | 未設定 API base | 無外部請求；同意存 `sessionStorage`；送出顯示「已送出（預覽模式，尚未寫入 FaceMe）」 |
+| **真實後端** | localStorage 有 API base | 同意必須向薄後端 `POST /api/consent` 取得短效 ticket；註冊 `POST /api/register`。失敗**不會** fallback Mock 假成功 |
 
-編輯 **`index.html`** 內 `div#notice-text`（class `notice-scroll`）區塊即可。
+API base 只存非機密位址（`localStorage` key `faceme_api_base`）。變更 base 會清除同意狀態。帳密**永不**進瀏覽器。
 
-- 所有尚未確認的公司名、期間、地區、聯絡窗口等，請維持或更新為  
-  `<span class="placeholder">【待填寫：…】</span>`，**不要**寫成已核准的假內容。
-- 頁首草稿提示在 `div.draft-banner`；法務定稿後可調整標籤文案，但上線前請務必置換全文。
-- 若需調整同意 checkbox 文案，修改 `label[for="consent-check"]`。
-- 樣式在 `styles.css`；同意／閘道／表單邏輯在 `app.js`。
+若在 Pages（HTTPS）把 API base 設成 `http://…`，前端會明確提示阻擋（mixed content），並建議改走內網同源 HTTPS。**不要**關閉瀏覽器安全功能。
 
-## 純預覽行為與限制
+## 聲明文案怎麼改
 
-| 項目 | 行為 |
+編輯 `index.html` 的 `#notice-text`。未知欄位維持 `【待填寫：…】` 與「草稿／範本／待法務確認」。  
+前端／後端聲明版本常數：`v2026-11-06b-draft`（`app.js` 的 `STATEMENT_VERSION` 與伺服器 `FACEME_STATEMENT_VERSION` 必須一致）。
+
+**真實寫入 Central 預設關閉。** 需同時：
+
+1. 法務確認／更新聲明後，將 `FACEME_STATEMENT_LEGAL_CONFIRMED=1`
+2. `FACEME_REAL_MODE=1`
+3. 設定 `FACEME_BASE_URL` / `FACEME_ACCOUNT` / `FACEME_PASSWORD`
+
+否則 `/api/register` 回 503，不會呼叫 Central。此不代表法務合規已完成。
+
+## 薄後端（內網試驗）
+
+**用途**：內網試驗代理。未加企業 SSO／mTLS 等完整管控；請以網路 ACL 限制，**禁止公開到網際網路**。
+
+### 環境變數
+
+複製 `.env.example` → `.env`（已 gitignore）：
+
+| 變數 | 說明 |
 |------|------|
-| API | 不呼叫任何 FaceMe 或第三方 API |
-| 網路傳送個資 | 無（照片僅 `URL.createObjectURL` 本機預覽） |
-| 持久儲存 | 無 localStorage／IndexedDB／伺服器寫入；僅 sessionStorage 存同意旗標 |
-| 分析／外部圖 | 無 |
-| 正式 enrollment | 不在本版範圍 |
+| `HOST` / `PORT` | 監聽（建議 `127.0.0.1`） |
+| `FACEME_BASE_URL` | 僅伺服器；不可由 client 指定任意 upstream |
+| `FACEME_ACCOUNT` / `FACEME_PASSWORD` | Central 帳密 |
+| `FACEME_SKIP_TLS_VERIFY=1` | **僅** undici Agent 對上游關閉憑證驗證（自簽）。有 MITM 風險。**禁止**設全域 `NODE_TLS_REJECT_UNAUTHORIZED=0` |
+| `FACEME_REAL_MODE` / `FACEME_STATEMENT_LEGAL_CONFIRMED` | 皆為 `1` 才啟用真實寫入 |
+| `FACEME_STATEMENT_VERSION` | 須與前端一致 |
+| `CONSENT_TTL_SECONDS` | 同意 ticket 有效秒數 |
+| `CONSENT_LOG_PATH` | 本地 append JSONL（同意事件；不含照片／token／密碼）。權限、備份、留存由營運負責 |
+| `CORS_ORIGINS` | 逗號分隔 allowlist，**無 wildcard**。跨域只加可信 Pages origin；同源部署可不設 |
+| `UPSTREAM_TIMEOUT_MS` / `MAX_UPLOAD_BYTES` | 逾時與 8MB 上限 |
+| `RATE_LIMIT_*` | 簡易記憶體速率限制 |
 
-請勿在預覽環境輸入真實個資或上傳真實人臉。
-
-## 本機開啟
-
-任選靜態伺服器，例如：
+### 啟動
 
 ```bash
 cd faceme-registration-preview
-python3 -m http.server 8080
-# 開啟 http://127.0.0.1:8080/
+cp .env.example .env   # 再編輯
+npm install
+npm start              # 預設 http://127.0.0.1:8443 （靜態 + /api）
 ```
+
+本機開發：瀏覽器開 `http://127.0.0.1:8443/`，API base 留空（Mock）或設 `http://127.0.0.1:8443`（同源真實模式，仍需 `.env` 啟用 real mode 才會打 Central）。
+
+### 反向代理 HTTPS 範例
+
+見 `docs/nginx/faceme-proxy.example.conf`。以 nginx 終止 TLS，反代到本機薄後端，前端與 `/api` 同源，避免 mixed content／私網 CORS 問題。
+
+### 後端 API
+
+- `GET /api/health` — 版本、聲明版、realMode 是否啟用（無密）
+- `POST /api/consent` — JSON `{ "agreed": true, "statementVersion": "v2026-11-06b-draft" }` → `{ ticket, expiresAt }`（短效、單次使用、伺服器綁定版本／時間；有 expiry／replay 防護）
+- `POST /api/register` — multipart：`name`（必填）、`employeeId`（選填）、`image`、`consentTicket` → `{ personId }`
+
+註冊流程（server）：驗證 ticket → 驗證姓名／圖片 MIME／魔數／大小 → Central signIn → **QC 通過才** import。QC 未知形狀 **fail closed**；HTTP 200 不視為 QC pass。錯誤不回傳上游原文／token。
+
+### 依規格實作的 Central 呼叫（待內網驗證）
+
+詳見 `server/fixtures/central-responses.md` 與 `server/central/adapters.js`。
+
+| 呼叫 | 重點 |
+|------|------|
+| `POST /api/website/account/signIn` | form-urlencoded `account`,`password`；假設 JSON 含 `token` |
+| 後續 | `Authorization: <token>`（**不加** Bearer） |
+| `POST /api/website/snapshot/qc` | multipart `image` |
+| `POST /api/website/person/import` | multipart `name`,`snapshot`；`employeeId` 選填；假設回 `personId` |
+
+Fixtures 內皆為**假資料**標籤，非真實 token／personId。
 
 ## 測試
 
 ```bash
-npm install --no-save jsdom
-node tests/run-checks.js
+npm test
 ```
 
-測試涵蓋：靜態 HTML 結構與版本字串、同意 gating、姓名必填、照片類型／大小驗證與縮圖、mock 送出文案、響應式 meta／基本 a11y 屬性。  
-**不含**真實瀏覽器／Playwright 操作（若需 UI 截圖請另開桌面瀏覽器驗證線上網址）。
+涵蓋：前端 Mock／真實模式不 fallback、adapters fail-closed、同意缺失／版號不符／過期／重放、QC fail／未知不 import、登入失敗、multipart／Authorization 形狀、CORS allowlist、檔案類型等。  
+**不含**瀏覽器／Playwright；**未**對真實 `192.168.32.220` 驗證。
 
-## GitHub Pages
+## 使用者內網要做的事
 
-本 repo 以 `main` 分支根目錄部署。推送後等待 Pages 建置完成即可用 HTTPS 網址開啟。
+1. 在可達 Central 的主機部署本 repo，設定 `.env`（勿提交）。
+2. 法務確認聲明文案後更新版本字串，並設 `FACEME_STATEMENT_LEGAL_CONFIRMED=1` 與 `FACEME_REAL_MODE=1`。
+3. 以 HTTPS 反代同源提供前端；必要時 `FACEME_SKIP_TLS_VERIFY=1`（知悉風險）。
+4. 對照 Swagger 調整 `server/central/adapters.js` 與 fixtures。
+5. 用 ACL 限制來源；勿公開。
 
-## 檔案一覽
+## 安全摘要
 
-- `index.html` — 個資聲明
-- `register.html` — 註冊預覽
-- `styles.css` — 樣式
-- `app.js` — 前端邏輯
-- `tests/run-checks.js` — Node／jsdom 檢查
+- Central base／帳密僅伺服器；client 不能指定 upstream。
+- 臨時上傳在記憶體，用後丟棄；不寫照片到 disk；log 不含 token／密碼／照片。
+- 同意 JSONL 僅必要稽核欄位；非正式合規聲明。

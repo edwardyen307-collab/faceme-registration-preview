@@ -2,3 +2,12 @@ node_modules/
 .DS_Store
 *.log
 .npm/
+.env
+.env.local
+.env.*.local
+runtime/
+*.pem
+*.key
+*.crt
+tmp/
+uploads/

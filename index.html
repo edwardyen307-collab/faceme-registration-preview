@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-06a</title>
+  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-06b</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="consent">
@@ -14,11 +14,26 @@
         <h1>人臉資料蒐集個資聲明</h1>
         <p>FaceMe 註冊前同意流程（靜態預覽）</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-06a</span>
+      <span class="version-badge" aria-label="版本">v2026-11-06b</span>
     </div>
   </header>
 
   <main>
+    <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
+    <section class="card settings-card" aria-labelledby="api-settings-heading">
+      <h2 id="api-settings-heading">後端 API 設定（選用）</h2>
+      <p class="hint">
+        僅儲存非機密的 API base 位址於瀏覽器 localStorage。帳密只存在內網伺服器 <code>.env</code>。
+        留空＝Mock 預覽（無外部請求）。GitHub Pages <strong>無法</strong>直連內網 Central；真實模式請用薄後端同源部署。
+      </p>
+      <label for="api-base-input">API base（例如 <code>https://faceme-proxy.intranet</code>）</label>
+      <div class="api-row">
+        <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
+        <button type="button" class="btn btn-secondary" id="api-base-clear">清除</button>
+      </div>
+      <div class="api-status" id="api-base-status" aria-live="polite"></div>
+    </section>
     <section class="card" aria-labelledby="notice-heading">
       <div class="draft-banner" role="status">
         <span class="tag">草稿</span>
@@ -115,17 +130,19 @@
               <input type="checkbox" id="consent-check" name="consent" />
               <label for="consent-check">我已閱讀並同意上述個資聲明</label>
             </div>
+            <div class="error" id="consent-error" role="alert" aria-live="polite"></div>
             <button type="submit" class="btn btn-primary" id="consent-submit" disabled>
               確認送出
             </button>
           </form>
+          <p class="hint" style="margin:0.5rem 0 0">聲明版本（送後端核對）：<code>v2026-11-06b-draft</code></p>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06a
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06b
   </footer>
   <script src="app.js"></script>
 </body>

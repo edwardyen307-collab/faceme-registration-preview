@@ -1,12 +1,13 @@
 {
   "name": "faceme-registration-preview",
-  "version": "1.0.0",
-  "description": "FaceMe registration privacy notice static preview (GitHub Pages)",
-  "main": "app.js",
+  "version": "2026.11.6-b",
+  "description": "FaceMe privacy notice preview + intranet thin backend proxy (API shapes unverified)",
+  "main": "server/index.js",
   "directories": {
     "test": "tests"
   },
   "scripts": {
+    "start": "node server/index.js",
     "test": "node tests/run-checks.js"
   },
   "keywords": [],
@@ -16,5 +17,11 @@
   "devDependencies": {
     "jsdom": "^29.1.1"
   },
-  "private": true
+  "private": true,
+  "dependencies": {
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.3",
+    "multer": "^2.5.0",
+    "undici": "^7.30.2"
+  }
 }

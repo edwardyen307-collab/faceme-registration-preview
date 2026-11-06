@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-06a</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-06b</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,11 +14,23 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-06a</span>
+      <span class="version-badge" aria-label="版本">v2026-11-06b</span>
     </div>
   </header>
 
   <main>
+    <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
+    <section class="card settings-card" aria-labelledby="api-settings-heading">
+      <h2 id="api-settings-heading">後端 API 設定</h2>
+      <p class="hint">變更 API base 會清除同意狀態。真實模式送出時，姓名／照片只當次送到您的內網薄後端，前端不持久保存。</p>
+      <label for="api-base-input">API base</label>
+      <div class="api-row">
+        <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
+        <button type="button" class="btn btn-secondary" id="api-base-clear">清除</button>
+      </div>
+      <div class="api-status" id="api-base-status" aria-live="polite"></div>
+    </section>
     <section class="card" aria-labelledby="register-heading">
       <h2 id="register-heading" class="sr-only">註冊表單</h2>
 
@@ -87,6 +99,7 @@
           </div>
         </div>
 
+        <div class="error" id="form-error" role="alert" aria-live="polite"></div>
         <div class="actions-row">
           <button type="button" class="btn btn-secondary" id="back-to-notice">返回聲明頁</button>
           <button type="submit" class="btn btn-primary" id="register-submit">送出註冊</button>
@@ -104,7 +117,7 @@
   </main>
 
   <footer class="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06a
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06b
   </footer>
   <script src="app.js"></script>
 </body>

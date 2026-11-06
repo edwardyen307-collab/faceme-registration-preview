@@ -1,8 +1,14 @@
 (function () {
   'use strict';
 
+  var APP_VERSION = 'v2026-11-06b';
+  var STATEMENT_VERSION = 'v2026-11-06b-draft';
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
-  var MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB
+  var TICKET_KEY = 'faceme_consent_ticket';
+  var TICKET_EXP_KEY = 'faceme_consent_expires';
+  var API_BASE_AT_CONSENT_KEY = 'faceme_api_base_at_consent';
+  var API_BASE_LS_KEY = 'faceme_api_base';
+  var MAX_PHOTO_BYTES = 8 * 1024 * 1024;
   var ALLOWED_TYPES = {
     'image/jpeg': true,
     'image/png': true,
@@ -11,53 +17,210 @@
     'image/heif': true
   };
 
-  function hasConsent() {
+  function ssGet(k) {
     try {
-      return sessionStorage.getItem(CONSENT_KEY) === '1';
+      return sessionStorage.getItem(k);
+    } catch (e) {
+      return null;
+    }
+  }
+  function ssSet(k, v) {
+    try {
+      sessionStorage.setItem(k, v);
+    } catch (e) {}
+  }
+  function ssRemove(k) {
+    try {
+      sessionStorage.removeItem(k);
+    } catch (e) {}
+  }
+  function lsGet(k) {
+    try {
+      return localStorage.getItem(k);
+    } catch (e) {
+      return null;
+    }
+  }
+  function lsSet(k, v) {
+    try {
+      localStorage.setItem(k, v);
+    } catch (e) {}
+  }
+  function lsRemove(k) {
+    try {
+      localStorage.removeItem(k);
+    } catch (e) {}
+  }
+
+  function normalizeApiBase(raw) {
+    var s = String(raw || '').trim().replace(/\/+$/, '');
+    return s;
+  }
+
+  function getApiBase() {
+    return normalizeApiBase(lsGet(API_BASE_LS_KEY) || '');
+  }
+
+  function setApiBase(raw) {
+    var next = normalizeApiBase(raw);
+    var prev = getApiBase();
+    if (next !== prev) {
+      clearAllConsent();
+    }
+    if (next) lsSet(API_BASE_LS_KEY, next);
+    else lsRemove(API_BASE_LS_KEY);
+    return next;
+  }
+
+  function isRealMode() {
+    return Boolean(getApiBase());
+  }
+
+  function isMixedContentRisk(apiBase) {
+    try {
+      if (typeof location === 'undefined') return false;
+      if (location.protocol !== 'https:') return false;
+      return /^http:\/\//i.test(apiBase || '');
     } catch (e) {
       return false;
     }
   }
 
-  function setConsent(value) {
-    try {
-      if (value) {
-        sessionStorage.setItem(CONSENT_KEY, '1');
-      } else {
-        sessionStorage.removeItem(CONSENT_KEY);
-      }
-    } catch (e) {
-      /* ignore quota / private mode */
-    }
+  function hasMockConsent() {
+    return ssGet(CONSENT_KEY) === '1';
   }
 
-  function clearConsent() {
-    setConsent(false);
+  function hasRealConsent() {
+    var ticket = ssGet(TICKET_KEY);
+    var exp = ssGet(TICKET_EXP_KEY);
+    var baseAt = ssGet(API_BASE_AT_CONSENT_KEY) || '';
+    if (!ticket || !exp) return false;
+    if (baseAt !== getApiBase()) return false;
+    var t = Date.parse(exp);
+    if (!Number.isFinite(t) || Date.now() > t) return false;
+    return true;
+  }
+
+  function hasConsent() {
+    return isRealMode() ? hasRealConsent() : hasMockConsent();
+  }
+
+  function clearAllConsent() {
+    ssRemove(CONSENT_KEY);
+    ssRemove(TICKET_KEY);
+    ssRemove(TICKET_EXP_KEY);
+    ssRemove(API_BASE_AT_CONSENT_KEY);
+  }
+
+  function setMockConsent() {
+    clearAllConsent();
+    ssSet(CONSENT_KEY, '1');
+  }
+
+  function setRealConsent(ticket, expiresAt) {
+    clearAllConsent();
+    ssSet(TICKET_KEY, ticket);
+    ssSet(TICKET_EXP_KEY, expiresAt);
+    ssSet(API_BASE_AT_CONSENT_KEY, getApiBase());
   }
 
   function defaultNavigateTo(url, replace) {
-    if (replace) {
-      window.location.replace(url);
-    } else {
-      window.location.href = url;
-    }
+    if (replace) window.location.replace(url);
+    else window.location.href = url;
   }
 
   function navigateTo(url, replace) {
-    var impl = (window.FaceMePreview && window.FaceMePreview.navigateTo) || defaultNavigateTo;
-    // Avoid recursion when FaceMePreview.navigateTo is this wrapper during bootstrap.
+    var impl =
+      (window.FaceMePreview && window.FaceMePreview.navigateTo) ||
+      defaultNavigateTo;
     if (impl === navigateTo) impl = defaultNavigateTo;
     return impl(url, replace);
   }
 
+  function apiUrl(path) {
+    return getApiBase() + path;
+  }
+
+  function updateModeBanner(el) {
+    if (!el) return;
+    var base = getApiBase();
+    if (!base) {
+      el.className = 'mode-banner mode-mock';
+      el.innerHTML =
+        '<strong>預覽模式（Mock）</strong>：未設定後端 API base。同意與註冊只在本機模擬，' +
+        '<strong>不會</strong>送出任何外部請求，也不會寫入 FaceMe。';
+      return;
+    }
+    if (isMixedContentRisk(base)) {
+      el.className = 'mode-banner mode-blocked';
+      el.innerHTML =
+        '<strong>已阻擋不安全設定</strong>：目前頁面為 HTTPS（例如 GitHub Pages），' +
+        '不可將 API base 設為 <code>http://…</code>（瀏覽器 mixed content）。' +
+        '請改以<strong>內網同源 HTTPS</strong>開啟本前端（由薄後端靜態服務），勿關閉瀏覽器安全功能。' +
+        'GitHub Pages <strong>無法</strong>直連內網 Central。';
+      return;
+    }
+    el.className = 'mode-banner mode-real';
+    el.innerHTML =
+      '<strong>真實後端模式</strong>：資料將送往您設定的內網薄後端 <code></code>。' +
+      '薄後端再依伺服器設定代理 Central（帳密不下發瀏覽器）。連線失敗時<strong>不會</strong>改走 Mock 假成功。';
+    el.querySelector('code').textContent = base;
+  }
+
+  function initApiBasePanel() {
+    var input = document.getElementById('api-base-input');
+    var saveBtn = document.getElementById('api-base-save');
+    var clearBtn = document.getElementById('api-base-clear');
+    var banner = document.getElementById('mode-banner');
+    var status = document.getElementById('api-base-status');
+    if (!input) return;
+
+    input.value = getApiBase();
+    updateModeBanner(banner);
+
+    function flash(msg, isError) {
+      if (!status) return;
+      status.textContent = msg;
+      status.className = 'api-status' + (isError ? ' error' : '');
+    }
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        var next = setApiBase(input.value);
+        input.value = next;
+        updateModeBanner(banner);
+        if (next && isMixedContentRisk(next)) {
+          flash('已儲存位址，但目前 HTTPS 頁面會阻擋呼叫此 http API。', true);
+        } else if (next) {
+          flash('已儲存 API base，並清除舊同意狀態（需重新同意）。', false);
+        } else {
+          flash('已清除 API base，回到 Mock 預覽。', false);
+        }
+      });
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        setApiBase('');
+        input.value = '';
+        updateModeBanner(banner);
+        flash('已回到 Mock 預覽模式。', false);
+      });
+    }
+  }
+
   function initConsentPage() {
+    initApiBasePanel();
     var checkbox = document.getElementById('consent-check');
     var submitBtn = document.getElementById('consent-submit');
     var form = document.getElementById('consent-form');
+    var errEl = document.getElementById('consent-error');
     if (!checkbox || !submitBtn || !form) return;
 
     function sync() {
-      submitBtn.disabled = !checkbox.checked;
+      submitBtn.disabled = !checkbox.checked || submitBtn.dataset.busy === '1';
+    }
+    function setErr(msg) {
+      if (errEl) errEl.textContent = msg || '';
     }
 
     checkbox.addEventListener('change', sync);
@@ -65,13 +228,69 @@
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
+      setErr('');
       if (!checkbox.checked) {
         sync();
         checkbox.focus();
         return;
       }
-      setConsent(true);
-      navigateTo('register.html', false);
+
+      var base = getApiBase();
+      if (!base) {
+        setMockConsent();
+        navigateTo('register.html', false);
+        return;
+      }
+
+      if (isMixedContentRisk(base)) {
+        setErr(
+          'HTTPS 頁面無法呼叫 http API base（mixed content）。請用內網薄後端同源 HTTPS 開啟，或清除 API base 使用 Mock。'
+        );
+        return;
+      }
+
+      submitBtn.dataset.busy = '1';
+      sync();
+      fetch(apiUrl('/api/consent'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agreed: true,
+          statementVersion: STATEMENT_VERSION
+        })
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { res: res, data: data };
+          });
+        })
+        .then(function (pack) {
+          if (!pack.res.ok) {
+            throw new Error(
+              (pack.data && pack.data.error) ||
+                '後端拒絕同意記錄（不會改走 Mock）'
+            );
+          }
+          if (!pack.data || !pack.data.ticket || !pack.data.expiresAt) {
+            throw new Error('後端同意回應不完整（不會改走 Mock）');
+          }
+          setRealConsent(pack.data.ticket, pack.data.expiresAt);
+          navigateTo('register.html', false);
+        })
+        .catch(function (e) {
+          clearAllConsent();
+          var msg = (e && e.message) || '';
+          if (!msg || msg === 'Failed to fetch' || /network/i.test(msg)) {
+            msg = '無法連線後端（不會改走 Mock 假成功）';
+          } else if (msg.indexOf('Mock') === -1) {
+            msg = msg + '（不會改走 Mock 假成功）';
+          }
+          setErr(msg);
+        })
+        .finally(function () {
+          submitBtn.dataset.busy = '0';
+          sync();
+        });
     });
   }
 
@@ -87,47 +306,51 @@
     if (url && String(url).indexOf('blob:') === 0) {
       try {
         URL.revokeObjectURL(url);
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) {}
     }
   }
 
   function initRegisterPage() {
+    initApiBasePanel();
     if (!guardRegisterPage()) return;
 
     var form = document.getElementById('register-form');
     var nameInput = document.getElementById('full-name');
     var nameError = document.getElementById('name-error');
+    var memberInput = document.getElementById('member-id');
     var photoInput = document.getElementById('face-photo');
     var photoError = document.getElementById('photo-error');
     var previewWrap = document.getElementById('photo-preview-wrap');
     var previewImg = document.getElementById('photo-preview');
     var clearPhotoBtn = document.getElementById('clear-photo');
     var resultBox = document.getElementById('submit-result');
+    var formError = document.getElementById('form-error');
     var backBtn = document.getElementById('back-to-notice');
+    var submitBtn = document.getElementById('register-submit');
     var currentObjectUrl = null;
 
     function setPhotoError(msg) {
       if (photoError) photoError.textContent = msg || '';
       if (photoInput) {
-        if (msg) {
-          photoInput.setAttribute('aria-invalid', 'true');
-        } else {
-          photoInput.removeAttribute('aria-invalid');
-        }
+        if (msg) photoInput.setAttribute('aria-invalid', 'true');
+        else photoInput.removeAttribute('aria-invalid');
       }
     }
-
     function setNameError(msg) {
       if (nameError) nameError.textContent = msg || '';
       if (nameInput) {
-        if (msg) {
-          nameInput.setAttribute('aria-invalid', 'true');
-        } else {
-          nameInput.removeAttribute('aria-invalid');
-        }
+        if (msg) nameInput.setAttribute('aria-invalid', 'true');
+        else nameInput.removeAttribute('aria-invalid');
       }
+    }
+    function setFormError(msg) {
+      if (formError) formError.textContent = msg || '';
+    }
+    function showResult(text, ok) {
+      if (!resultBox) return;
+      resultBox.textContent = text;
+      resultBox.className = 'result visible' + (ok ? '' : ' result-error');
+      resultBox.focus();
     }
 
     function clearPhoto() {
@@ -147,7 +370,7 @@
       currentObjectUrl = URL.createObjectURL(file);
       if (previewImg) {
         previewImg.src = currentObjectUrl;
-        previewImg.alt = '人臉照片本機預覽（不會上傳）';
+        previewImg.alt = '人臉照片本機預覽（送出前僅在本機）';
       }
       if (previewWrap) previewWrap.classList.add('visible');
     }
@@ -160,8 +383,7 @@
       var type = (file.type || '').toLowerCase();
       var name = (file.name || '').toLowerCase();
       var okType =
-        ALLOWED_TYPES[type] ||
-        /\.(jpe?g|png|webp|heic|heif)$/.test(name);
+        ALLOWED_TYPES[type] || /\.(jpe?g|png|webp|heic|heif)$/.test(name);
       if (!okType) {
         setPhotoError('僅接受 JPG、PNG、WebP 或 HEIC 圖片。');
         return false;
@@ -192,30 +414,29 @@
         showPreview(file);
       });
     }
-
-    if (clearPhotoBtn) {
-      clearPhotoBtn.addEventListener('click', function () {
-        clearPhoto();
-      });
-    }
-
+    if (clearPhotoBtn) clearPhotoBtn.addEventListener('click', clearPhoto);
     if (backBtn) {
       backBtn.addEventListener('click', function () {
         navigateTo('index.html', false);
       });
     }
-
     window.addEventListener('pagehide', function () {
       revokeObjectUrl(currentObjectUrl);
       currentObjectUrl = null;
     });
+    if (nameInput) {
+      nameInput.addEventListener('input', function () {
+        if ((nameInput.value || '').trim()) setNameError('');
+      });
+    }
 
     if (form) {
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
+        setFormError('');
         if (resultBox) resultBox.classList.remove('visible');
 
-        var name = (nameInput && nameInput.value || '').trim();
+        var name = ((nameInput && nameInput.value) || '').trim();
         if (!name) {
           setNameError('請填寫姓名。');
           if (nameInput) nameInput.focus();
@@ -224,38 +445,111 @@
         setNameError('');
 
         var file = photoInput && photoInput.files && photoInput.files[0];
+        if (isRealMode() && !file) {
+          setPhotoError('真實模式請上傳人臉照片。');
+          return;
+        }
         if (file && !validatePhotoFile(file)) {
           if (photoInput) photoInput.focus();
           return;
         }
 
-        // Preview mode only: no network, no FaceMe API, no persistence.
-        if (resultBox) {
-          resultBox.textContent = '已送出（預覽模式，尚未寫入 FaceMe）';
-          resultBox.classList.add('visible');
-          resultBox.focus();
+        if (!isRealMode()) {
+          showResult('已送出（預覽模式，尚未寫入 FaceMe）', true);
+          return;
         }
-      });
-    }
 
-    if (nameInput) {
-      nameInput.addEventListener('input', function () {
-        if ((nameInput.value || '').trim()) setNameError('');
+        if (isMixedContentRisk(getApiBase())) {
+          setFormError(
+            'HTTPS 頁面無法呼叫 http API（mixed content）。請改用內網同源部署。'
+          );
+          return;
+        }
+
+        if (!hasRealConsent()) {
+          setFormError('同意票證無效或已過期，請返回聲明頁重新同意。');
+          return;
+        }
+
+        var fd = new FormData();
+        fd.append('name', name);
+        var mid = ((memberInput && memberInput.value) || '').trim();
+        if (mid) fd.append('employeeId', mid);
+        fd.append('consentTicket', ssGet(TICKET_KEY) || '');
+        fd.append('image', file, file.name || 'face.jpg');
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.dataset.busy = '1';
+        }
+
+        fetch(apiUrl('/api/register'), { method: 'POST', body: fd })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data };
+            });
+          })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              // Ticket may be consumed/invalid — force re-consent on hard consent errors
+              var code = pack.data && pack.data.code;
+              if (
+                code === 'CONSENT_INVALID' ||
+                code === 'CONSENT_EXPIRED' ||
+                code === 'CONSENT_REPLAY' ||
+                code === 'CONSENT_MISSING' ||
+                code === 'CONSENT_VERSION_MISMATCH'
+              ) {
+                clearAllConsent();
+              }
+              throw new Error(
+                (pack.data && pack.data.error) ||
+                  '註冊失敗（不會改走 Mock 假成功）'
+              );
+            }
+            if (!pack.data || !pack.data.personId) {
+              throw new Error('後端未回傳 personId（不會改走 Mock）');
+            }
+            clearAllConsent();
+            showResult('註冊成功（經內網薄後端）。personId：' + pack.data.personId, true);
+          })
+          .catch(function (e) {
+            setFormError(e.message || '無法連線後端（不會改走 Mock 假成功）');
+            showResult(e.message || '註冊失敗', false);
+          })
+          .finally(function () {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.dataset.busy = '0';
+            }
+          });
       });
     }
   }
 
-  // Expose for Node/DOM tests without leaking secrets.
   window.FaceMePreview = {
+    APP_VERSION: APP_VERSION,
+    STATEMENT_VERSION: STATEMENT_VERSION,
     CONSENT_KEY: CONSENT_KEY,
+    TICKET_KEY: TICKET_KEY,
+    API_BASE_LS_KEY: API_BASE_LS_KEY,
     MAX_PHOTO_BYTES: MAX_PHOTO_BYTES,
+    getApiBase: getApiBase,
+    setApiBase: setApiBase,
+    isRealMode: isRealMode,
+    isMixedContentRisk: isMixedContentRisk,
     hasConsent: hasConsent,
-    setConsent: setConsent,
-    clearConsent: clearConsent,
+    hasMockConsent: hasMockConsent,
+    hasRealConsent: hasRealConsent,
+    clearAllConsent: clearAllConsent,
+    setMockConsent: setMockConsent,
+    setRealConsent: setRealConsent,
     navigateTo: defaultNavigateTo,
     initConsentPage: initConsentPage,
     guardRegisterPage: guardRegisterPage,
-    initRegisterPage: initRegisterPage
+    initRegisterPage: initRegisterPage,
+    initApiBasePanel: initApiBasePanel,
+    updateModeBanner: updateModeBanner
   };
 
   document.addEventListener('DOMContentLoaded', function () {
