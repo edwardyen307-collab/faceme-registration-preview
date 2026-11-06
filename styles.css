@@ -469,3 +469,20 @@ textarea:focus-visible,
   color: var(--danger) !important;
   border-color: #fecdca !important;
 }
+
+.conn-result {
+  margin-top: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  background: #0b1220;
+  color: #e5eefc;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.conn-result:not([hidden]) {
+  display: block;
+}

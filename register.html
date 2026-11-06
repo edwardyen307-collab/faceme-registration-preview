@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-06b</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-06c</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,7 +14,7 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-06b</span>
+      <span class="version-badge" aria-label="版本">v2026-11-06c</span>
     </div>
   </header>
 
@@ -27,8 +27,14 @@
       <div class="api-row">
         <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
         <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
-        <button type="button" class="btn btn-secondary" id="api-base-clear">清除</button>
+        <button type="button" class="btn btn-secondary" id="api-base-clear">Mock 預覽</button>
+        <button type="button" class="btn btn-secondary" id="api-base-same-origin">使用本機薄後端</button>
       </div>
+      <div class="api-row" style="margin-top:0.5rem">
+        <button type="button" class="btn btn-secondary" id="btn-conn-test">連線測試（不寫入 Central）</button>
+        <button type="button" class="btn btn-secondary" id="btn-conn-login">連線＋登入測試（明確觸發）</button>
+      </div>
+      <pre class="conn-result" id="conn-test-result" aria-live="polite" hidden></pre>
       <div class="api-status" id="api-base-status" aria-live="polite"></div>
     </section>
     <section class="card" aria-labelledby="register-heading">
@@ -117,7 +123,7 @@
   </main>
 
   <footer class="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06b
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-06c
   </footer>
   <script src="app.js"></script>
 </body>

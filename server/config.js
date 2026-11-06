@@ -37,7 +37,7 @@ function int(name, defaultValue) {
 }
 
 const STATEMENT_VERSION =
-  process.env.FACEME_STATEMENT_VERSION || 'v2026-11-06b-draft';
+  process.env.FACEME_STATEMENT_VERSION || 'v2026-11-06c-draft';
 
 const realModeFlag = bool('FACEME_REAL_MODE', false);
 const legalConfirmed = bool('FACEME_STATEMENT_LEGAL_CONFIRMED', false);
@@ -69,7 +69,7 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-06b'
+  appVersion: 'v2026-11-06c'
 };
 
 function assertRealModeReady() {

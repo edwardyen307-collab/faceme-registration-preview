@@ -29,8 +29,25 @@ router.get('/health', (req, res) => {
     // Never expose account/password/base secrets beyond "configured?" booleans
     upstreamConfigured: Boolean(config.facemeBaseUrl && config.facemeAccount),
     note:
-      '依提供規格實作之薄代理；Central API shape 待內網驗證。GitHub Pages 無法直連私網 Central。'
+      '本機薄後端存活檢查（非 Central 連線測試）。API shape 待內網驗證。同機請用 http://127.0.0.1:PORT/ 。'
   });
+});
+
+
+router.post('/connection-test', express.json({ limit: '8kb' }), async (req, res, next) => {
+  try {
+    // Allowed even when FACEME_REAL_MODE=0. Does not change write gates.
+    const attemptLogin = Boolean(req.body && req.body.attemptLogin === true);
+    const result = await central.connectionProbe({ attemptLogin });
+    res.json({
+      appVersion: config.appVersion,
+      note:
+        '連線測試 ≠ /api/health。health 只表示本機薄後端存活；此測試探測 .env 的 Central base（可選登入）。不寫入、不做 QC／import。',
+      ...result
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 router.post('/consent', express.json({ limit: '32kb' }), (req, res, next) => {

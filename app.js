@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-06b';
-  var STATEMENT_VERSION = 'v2026-11-06b-draft';
+  var APP_VERSION = 'v2026-11-06c';
+  var STATEMENT_VERSION = 'v2026-11-06c-draft';
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
   var TICKET_EXP_KEY = 'faceme_consent_expires';
@@ -162,19 +162,95 @@
     }
     el.className = 'mode-banner mode-real';
     el.innerHTML =
-      '<strong>真實後端模式</strong>：資料將送往您設定的內網薄後端 <code></code>。' +
-      '薄後端再依伺服器設定代理 Central（帳密不下發瀏覽器）。連線失敗時<strong>不會</strong>改走 Mock 假成功。';
+      '<strong>本機／指定薄後端模式</strong>：請求會送往 <code></code>。' +
+      '帳密只在伺服器 .env。即使選了後端，若未開啟 FACEME_REAL_MODE＋法務確認，註冊仍不會寫入 Central。' +
+      '連線失敗<strong>不會</strong>改走 Mock 假成功。可用「連線測試」檢查 Central（≠ health）。';
     el.querySelector('code').textContent = base;
+  }
+
+  function isLocalLoopbackPage() {
+    try {
+      var h = location.hostname;
+      return h === '127.0.0.1' || h === 'localhost';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function applyLocalOneClickDefaults() {
+    if (!isLocalLoopbackPage()) return;
+    var params;
+    try {
+      params = new URLSearchParams(location.search || '');
+    } catch (e) {
+      params = null;
+    }
+    if (params && params.get('local') === '1') {
+      // One-click start: force same-origin backend mode (clear stale empty mock confusion)
+      setApiBase(location.origin);
+      return;
+    }
+  }
+
+  function runConnectionTest(attemptLogin) {
+    var out = document.getElementById('conn-test-result');
+    var base = getApiBase();
+    if (!base) {
+      if (out) {
+        out.hidden = false;
+        out.textContent =
+          '請先「使用本機薄後端」或設定 API base。連線測試是打薄後端的 /api/connection-test，不是 Mock。';
+      }
+      return;
+    }
+    if (isMixedContentRisk(base)) {
+      if (out) {
+        out.hidden = false;
+        out.textContent = 'HTTPS 頁無法呼叫 http API base。';
+      }
+      return;
+    }
+    if (out) {
+      out.hidden = false;
+      out.textContent = attemptLogin
+        ? '進行連線＋登入測試（不會 QC／import）…'
+        : '進行連線測試（TCP／TLS，不登入）…';
+    }
+    fetch(base + '/api/connection-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attemptLogin: !!attemptLogin })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          return { res: res, data: data };
+        });
+      })
+      .then(function (pack) {
+        if (!out) return;
+        out.textContent = JSON.stringify(pack.data, null, 2);
+      })
+      .catch(function (e) {
+        if (!out) return;
+        out.textContent =
+          '無法呼叫連線測試：' +
+          ((e && e.message) || e) +
+          '\n（這與 /api/health 不同；若薄後端未開請先 start.bat）';
+      });
   }
 
   function initApiBasePanel() {
     var input = document.getElementById('api-base-input');
     var saveBtn = document.getElementById('api-base-save');
     var clearBtn = document.getElementById('api-base-clear');
+    var sameBtn = document.getElementById('api-base-same-origin');
     var banner = document.getElementById('mode-banner');
     var status = document.getElementById('api-base-status');
+    var connBtn = document.getElementById('btn-conn-test');
+    var connLoginBtn = document.getElementById('btn-conn-login');
     if (!input) return;
 
+    applyLocalOneClickDefaults();
     input.value = getApiBase();
     updateModeBanner(banner);
 
@@ -203,7 +279,34 @@
         setApiBase('');
         input.value = '';
         updateModeBanner(banner);
-        flash('已回到 Mock 預覽模式。', false);
+        flash('已回到 Mock 預覽模式（無外部請求）。', false);
+      });
+    }
+    if (sameBtn) {
+      sameBtn.addEventListener('click', function () {
+        if (!isLocalLoopbackPage() && location.protocol === 'https:') {
+          flash('目前不是本機 HTTP 頁；請用 start.bat 開啟 http://127.0.0.1:8443/?local=1', true);
+          return;
+        }
+        var origin = location.origin;
+        setApiBase(origin);
+        input.value = origin;
+        updateModeBanner(banner);
+        flash('已設定本機同源薄後端：' + origin, false);
+      });
+    }
+    if (connBtn) {
+      connBtn.addEventListener('click', function () {
+        runConnectionTest(false);
+      });
+    }
+    if (connLoginBtn) {
+      connLoginBtn.addEventListener('click', function () {
+        var ok = window.confirm(
+          '將使用伺服器 .env 帳密向 Central 做「只讀登入測試」。\n不會 QC、不會 import、不會寫入人臉。\n是否繼續？'
+        );
+        if (!ok) return;
+        runConnectionTest(true);
       });
     }
   }
@@ -549,7 +652,10 @@
     guardRegisterPage: guardRegisterPage,
     initRegisterPage: initRegisterPage,
     initApiBasePanel: initApiBasePanel,
-    updateModeBanner: updateModeBanner
+    updateModeBanner: updateModeBanner,
+    applyLocalOneClickDefaults: applyLocalOneClickDefaults,
+    isLocalLoopbackPage: isLocalLoopbackPage,
+    runConnectionTest: runConnectionTest
   };
 
   document.addEventListener('DOMContentLoaded', function () {
