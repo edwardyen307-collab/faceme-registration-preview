@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09b**
+版本：**v2026-11-09c**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09b.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09c.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -61,6 +61,10 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 
 可選：`setup-and-start.ps1` 同樣只呼叫上述 Node 腳本，**不** Bypass。ZIP 的 Mark of the Web 請用「解除鎖定」，或直接用 `start.bat`。
 
+## TLS 與 IP 位址（v2026-11-09c）
+
+連線 `https://127.0.0.1`（或其它 IP）時**不會**再設定非法的 TLS `servername`（Node 禁止 SNI 為 IP）。憑證驗證預設仍開啟；若出現「憑證不被信任／名稱不符」，請改用憑證 SAN 上的主機名、匯入 CA，或僅在明白風險時設 `FACEME_SKIP_TLS_VERIFY=1`（不會自動略過）。
+
 ## 在網頁修改 Central 位址（本機）
 
 於 `http://127.0.0.1:8443/` 連線設定區：
@@ -85,7 +89,7 @@ npm start          # http://127.0.0.1:8443/
 npm test
 ```
 
-修改聲明：`index.html` 的 `#notice-text`；版本字串須與 `FACEME_STATEMENT_VERSION`／前端 `STATEMENT_VERSION` 一致（目前 `v2026-11-09b-draft`）。
+修改聲明：`index.html` 的 `#notice-text`；版本字串須與 `FACEME_STATEMENT_VERSION`／前端 `STATEMENT_VERSION` 一致（目前 `v2026-11-09c-draft`）。
 
 ## 安全提醒
 

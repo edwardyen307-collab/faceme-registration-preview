@@ -1,12 +1,18 @@
 'use strict';
 
-const { Agent, FormData, fetch } = require('undici');
+const { Agent, FormData, fetch, buildConnector } = require('undici');
 const { config } = require('../config');
 const {
   parseSignInToken,
   parseQcResult,
   parseImportPersonId
 } = require('./adapters');
+const {
+  buildTlsSocketOptions,
+  sanitizeConnectOptions,
+  explainTlsFailure,
+  hostIsIp
+} = require('../tls-options');
 
 let agent = null;
 
@@ -14,9 +20,14 @@ function getAgent() {
   if (agent) return agent;
   // TLS verify skip is SCOPED to this upstream Agent only — never set
   // process.env.NODE_TLS_REJECT_UNAUTHORIZED.
-  const connect = config.skipTlsVerify
-    ? { rejectUnauthorized: false }
-    : undefined;
+  // Node forbids TLS servername=IP; strip it when host/servername is an IP.
+  const baseConnector = buildConnector({
+    rejectUnauthorized: !config.skipTlsVerify
+  });
+  const connect = (options, callback) => {
+    const opts = sanitizeConnectOptions(options);
+    return baseConnector(opts, callback);
+  };
   agent = new Agent({
     connect,
     headersTimeout: config.upstreamTimeoutMs,
@@ -79,8 +90,19 @@ async function upstream(pathname, options) {
       err.status = 504;
       throw err;
     }
-    const err = new Error('無法連線上游');
-    err.code = 'UPSTREAM_UNREACHABLE';
+    let hostHint = '';
+    try {
+      hostHint = new URL(config.facemeBaseUrl).hostname;
+    } catch (_) {}
+    const plain = explainTlsFailure(e, hostHint || 'Central');
+    const isTls =
+      e &&
+      (e.code === 'ERR_INVALID_ARG_VALUE' ||
+        String(e.code || '').includes('CERT') ||
+        String(e.code || '').includes('TLS') ||
+        /certificate|SSL|TLS|servername/i.test(String(e.message || '')));
+    const err = new Error(isTls ? plain : '無法連線上游：' + (e && e.message ? e.message : String(e)));
+    err.code = isTls ? e.code || 'TLS_ERROR' : 'UPSTREAM_UNREACHABLE';
     err.status = 502;
     throw err;
   } finally {
@@ -219,12 +241,21 @@ async function connectionProbe(options) {
   // TLS (https only)
   if (parsed.protocol === 'https:') {
     const tlsResult = await new Promise((resolve) => {
-      const socket = tls.connect({
-        host,
-        port,
-        servername: host,
-        rejectUnauthorized: !config.skipTlsVerify
-      });
+      let socket;
+      try {
+        const tlsOpts = buildTlsSocketOptions({
+          host,
+          port,
+          rejectUnauthorized: !config.skipTlsVerify
+        });
+        socket = tls.connect(tlsOpts);
+      } catch (e) {
+        resolve({
+          ok: false,
+          detail: explainTlsFailure(e, host)
+        });
+        return;
+      }
       const timer = setTimeout(() => {
         socket.destroy();
         resolve({ ok: false, detail: 'TLS 握手逾時' });
@@ -237,28 +268,28 @@ async function connectionProbe(options) {
         if (!config.skipTlsVerify && !authorized) {
           resolve({
             ok: false,
-            detail:
-              '憑證不受信任：' +
-              String(authErr || 'unauthorized') +
-              '。請改為信任 CA，或僅在明白風險時於 .env 設 FACEME_SKIP_TLS_VERIFY=1'
+            detail: explainTlsFailure(
+              { code: String(authErr || 'UNAUTHORIZED'), message: String(authErr || 'unauthorized') },
+              host
+            )
           });
           return;
         }
+        const snNote = hostIsIp(host)
+          ? '（目標為 IP，未設定 TLS servername/SNI）'
+          : '';
         resolve({
           ok: true,
           detail: config.skipTlsVerify
-            ? 'TLS 已連線（目前跳過憑證驗證 — 有 MITM 風險）'
-            : 'TLS 握手成功且憑證通過驗證'
+            ? 'TLS 已連線（目前跳過憑證驗證 — 有 MITM 風險）' + snNote
+            : 'TLS 握手成功且憑證通過驗證' + snNote
         });
       });
       socket.on('error', (e) => {
         clearTimeout(timer);
         resolve({
           ok: false,
-          detail:
-            'TLS 失敗：' +
-            (e && e.message ? e.message : String(e)) +
-            '。若 Central 憑證 SAN 不含此主機名，請改 FACEME_BASE_URL 為憑證上的名稱／實際聽取位址。'
+          detail: explainTlsFailure(e, host)
         });
       });
     });
@@ -339,5 +370,7 @@ module.exports = {
   connectionProbe,
   resetAgentForTests,
   resetUpstreamAgent,
-  getAgent
+  getAgent,
+  buildTlsSocketOptions,
+  hostIsIp
 };

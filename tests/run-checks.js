@@ -63,13 +63,13 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09b', /v2026-11-09b/.test(text));
+  ok('start.bat version banner 09c', /v2026-11-09c/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09b in pages', /v2026-11-09b/.test(indexHtml) && /v2026-11-09b/.test(registerHtml));
-ok('statement draft 09b', /v2026-11-09b-draft/.test(js) && /v2026-11-09b-draft/.test(indexHtml));
+ok('version v2026-11-09c in pages', /v2026-11-09c/.test(indexHtml) && /v2026-11-09c/.test(registerHtml));
+ok('statement draft 09c', /v2026-11-09c-draft/.test(js) && /v2026-11-09c-draft/.test(indexHtml));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
 ok('env example legal confirm off', /^FACEME_STATEMENT_LEGAL_CONFIRMED=0$/m.test(envExample));
@@ -120,6 +120,39 @@ function loadFront(htmlFile, url, beforeEval) {
   page.dom.window.close();
 })();
 
+function tlsOptionTests() {
+  var tlsOpt = require(path.join(root, 'server/tls-options'));
+  var tls = require('tls');
+  var v4 = tlsOpt.buildTlsSocketOptions({ host: '127.0.0.1', port: 443, rejectUnauthorized: true });
+  ok('IPv4 TLS options omit servername', v4.host === '127.0.0.1' && !Object.prototype.hasOwnProperty.call(v4, 'servername'));
+  var v6 = tlsOpt.buildTlsSocketOptions({ host: '::1', port: 443, rejectUnauthorized: true });
+  ok('IPv6 TLS options omit servername', v6.host === '::1' && !Object.prototype.hasOwnProperty.call(v6, 'servername'));
+  var v6b = tlsOpt.buildTlsSocketOptions({ host: '[::1]', port: 443 });
+  ok('IPv6 bracket host normalized without servername', v6b.host === '::1' && !Object.prototype.hasOwnProperty.call(v6b, 'servername'));
+  var name = tlsOpt.buildTlsSocketOptions({ host: 'central.example', port: 8443 });
+  ok('hostname sets servername', name.servername === 'central.example');
+  var cleaned = tlsOpt.sanitizeConnectOptions({ host: '192.168.1.1', servername: '192.168.1.1', port: 443 });
+  ok('sanitize drops IP servername', cleaned.servername === undefined);
+  var cleanedHost = tlsOpt.sanitizeConnectOptions({ hostname: '127.0.0.1', servername: '127.0.0.1' });
+  ok('sanitize drops servername when hostname is IP', cleanedHost.servername === undefined);
+  // sync tls.connect must not throw ERR_INVALID_ARG_VALUE for IP
+  try {
+    var s = tls.connect(v4);
+    s.on('error', function () {});
+    s.destroy();
+    ok('tls.connect with IPv4 options does not sync-throw', true);
+  } catch (e) {
+    ok('tls.connect with IPv4 options does not sync-throw', false, e && e.message);
+  }
+  ok('hostIsIp true for v4', tlsOpt.hostIsIp('127.0.0.1') === true);
+  ok('hostIsIp false for name', tlsOpt.hostIsIp('localhost') === false);
+  var explained = tlsOpt.explainTlsFailure(
+    { code: 'DEPTH_ZERO_SELF_SIGNED_CERT', message: 'self signed' },
+    '127.0.0.1'
+  );
+  ok('cert failure plain language', /憑證/.test(explained) && /FACEME_SKIP_TLS_VERIFY/.test(explained));
+}
+
 function adapterTests() {
   var adapters = require(path.join(root, 'server/central/adapters'));
   ok('signIn token', !!adapters.parseSignInToken(200, { token: 'fake-token-for-tests-only-not-real' }));
@@ -159,7 +192,7 @@ async function frontendAsyncChecks() {
 async function httpIntegration() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
-  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09b-draft';
+  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09c-draft';
   process.env.FACEME_REAL_MODE = '0';
   process.env.FACEME_STATEMENT_LEGAL_CONFIRMED = '0';
   process.env.FACEME_ACCOUNT = 'test-account';
@@ -212,7 +245,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09b', config.appVersion === 'v2026-11-09b');
+  ok('appVersion 09c', config.appVersion === 'v2026-11-09c');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -262,7 +295,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09b', health.status === 200 && health.json.appVersion === 'v2026-11-09b');
+  ok('health version 09c', health.status === 200 && health.json.appVersion === 'v2026-11-09c');
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
 
   var beforeLogin = loginHits;
@@ -270,6 +303,14 @@ async function httpIntegration() {
   var beforeImport = importHits;
   var ct = await req('POST', '/api/connection-test', { attemptLogin: false });
   ok('connection-test without login ok tcp', ct.status === 200 && ct.json.ok === true);
+
+  // Ensure connectionProbe TLS step does not crash on IP target with ERR_INVALID_ARG_VALUE
+  (function () {
+    var central = require(path.join(root, 'server/central/client'));
+    // Use http upstream already running — for https IP we'd need certs; unit tests cover options.
+    ok('client exports hostIsIp', typeof central.hostIsIp === 'function' && central.hostIsIp('127.0.0.1'));
+  })();
+
   ok('connection-test distinct note', /連線測試/.test(ct.json.note || '') || /≠/.test(ct.json.note || ''));
   ok('connection-test no login when not requested', loginHits === beforeLogin);
   ok('connection-test never QC/import', qcHits === beforeQc && importHits === beforeImport);
@@ -477,7 +518,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09b');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09c');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);
@@ -501,6 +542,7 @@ async function httpIntegration() {
 
 (async function main() {
   try {
+    tlsOptionTests();
     adapterTests();
     await frontendAsyncChecks();
     await httpIntegration();
