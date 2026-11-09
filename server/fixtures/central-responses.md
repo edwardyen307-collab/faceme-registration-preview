@@ -36,7 +36,7 @@ These fixtures are **fake data** for adapters/tests. Adjust after intranet verif
 - Legacy fixture shapes (`pass` / `success` / `result`) still accepted for older tests
 - **HTTP 200 with unknown body = QC fail (fail closed)** — never treat status alone as pass
 
-### QC failure reason extraction (v2026-11-09k)
+### QC failure reason extraction (v2026-11-09l)
 
 When `condition` is present, **only `false` flags** become Traditional Chinese reasons:
 
@@ -71,14 +71,14 @@ Masked tech details go to `runtime/qc.log` / `upstream.log`.
 | Import group field | multipart `groupId` (int64) | only official field; resolve create id from response or re-list by name |
 
 Env overrides: `FACEME_GROUP_LIST_PATH`, `FACEME_GROUP_CREATE_PATH`, `FACEME_IMPORT_GROUP_FIELD`, **`FACEME_GROUP_BODY_ENCODING=multipart|form|json`**.
-Body encoding default auto-try: **multipart → form (urlencoded) → json**; only HTTP 415 advances. Successful encoding remembered for the process.
+Body encoding default auto-try: **form → multipart → json**; only HTTP 415 advances. Successful encoding remembered for the process.
 signIn uses `application/x-www-form-urlencoded`; snapshot/qc and person/import use `multipart/form-data`.
 
 **Invisible people after “success”**: previously wrong/missing group multipart field (aliases or no group) likely put people outside the expected Central group filter. Fix = send only numeric `groupId`.
 
 
 
-## QC failure reason extraction (v2026-11-09k)
+## QC failure reason extraction (v2026-11-09l)
 
 Central's exact JSON field names are **not live-verified** here (intranet swagger only).
 Public FaceMe materials mention QC for occlusion / blur / lighting / angle / size / grayscale.
@@ -98,3 +98,20 @@ This thin backend loosely matches common aliases and always fail-closes:
 
 Failures return Traditional Chinese `reasons[]` + masked `techDetails` (no token/password/image/feature).
 Masked payload is also appended to `runtime/qc.log` and `runtime/upstream.log`.
+
+## Live group/list response (observed 2026-11-09l→l)
+
+```json
+{
+  "totalSize": 5,
+  "results": [
+    { "groupId": 1, "name": "VIP", "type": "VIP", "memberCount": 0 },
+    { "groupId": 14, "name": "員工", "type": "NORMAL", "color": "#0070C0", "patternId": 1, "memberCount": 0 }
+  ]
+}
+```
+
+- Rows live under **`results`** (not `data`/`list`). Id field is **`groupId`**.
+- `totalSize` is absolute count — if `results.length < totalSize`, request next `pageIndex`.
+- NORMAL groups may include `color` + `patternId`. Central rejects create when that pair is already used (`HTTP 400` «The set of color and pattern is already used…»).
+- Body encoding that works on live Central: **`application/x-www-form-urlencoded` (form)**; JSON → 415. Default try order is now **form → multipart → json**.

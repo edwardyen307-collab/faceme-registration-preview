@@ -1,0 +1,17 @@
+{
+  "totalSize": 5,
+  "results": [
+    { "groupId": 1, "name": "VIP", "type": "VIP", "memberCount": 0 },
+    { "groupId": 3, "name": "Employee", "type": "EMPLOYEE", "memberCount": 1 },
+    { "groupId": 2, "name": "Blocklist", "type": "BLOCKLIST", "memberCount": 0 },
+    { "groupId": 4, "name": "Registered Visitor", "type": "VISITOR", "memberCount": 0 },
+    {
+      "groupId": 14,
+      "name": "員工",
+      "type": "NORMAL",
+      "color": "#0070C0",
+      "patternId": 1,
+      "memberCount": 0
+    }
+  ]
+}

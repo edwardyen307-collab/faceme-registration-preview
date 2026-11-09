@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09k
+FaceMe update pack v2026-11-09l
 ===============================
 DO NOT overwrite: .env
 
@@ -17,6 +17,6 @@ REQUIRED:
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
 After replace: close old node, start.bat, hard-refresh.
-New (09k): group list/create body encoding multipart→form→json (only on HTTP 415);
-remember successful encoding in-process; FACEME_GROUP_BODY_ENCODING override;
-probe UI shows which encoding was used. signIn stays urlencoded; QC/import multipart.
+New (09l): parse live group list {totalSize,results[{groupId}]}; match existing
+groups by name (e.g. 員工→14) without re-create; form encoding preferred;
+auto-pick unused color×patternId on create; retry up to 3× on "already used".

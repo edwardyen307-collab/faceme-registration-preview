@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09k', /v2026-11-09k/.test(text));
+  ok('start.bat version banner 09l', /v2026-11-09l/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09k in pages', /v2026-11-09k/.test(indexHtml) && /v2026-11-09k/.test(registerHtml));
+ok('version v2026-11-09l in pages', /v2026-11-09l/.test(indexHtml) && /v2026-11-09l/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -367,8 +367,8 @@ function adapterTests() {
   ok('list body has pageIndex', groupsMod.listRequestBody(0).pageIndex === 0 && groupsMod.listRequestBody(0).orderBy === 'name:asc');
   groupsMod.resetGroupBodyEncodingMemory();
   delete process.env.FACEME_GROUP_BODY_ENCODING;
-  ok('default encoding order multipart first', groupsMod.groupBodyEncodingOrder()[0] === 'multipart');
-  ok('default encoding order has form then json', groupsMod.groupBodyEncodingOrder().join(',') === 'multipart,form,json');
+  ok('default encoding order form first', groupsMod.groupBodyEncodingOrder()[0] === 'form');
+  ok('default encoding order has multipart then json', groupsMod.groupBodyEncodingOrder().join(',') === 'form,multipart,json');
   var builtMp = groupsMod.buildGroupBody({ pageIndex: 0, pageSize: 100, orderBy: 'name:asc' }, 'multipart');
   ok('build multipart has FormData body', builtMp.encoding === 'multipart' && builtMp.body && typeof builtMp.body.append === 'function');
   var builtForm = groupsMod.buildGroupBody({ name: '員工', color: '#0070C0', patternId: 1 }, 'form');
@@ -381,6 +381,32 @@ function adapterTests() {
   ok('env forces json only', groupsMod.groupBodyEncodingOrder().join(',') === 'json');
   delete process.env.FACEME_GROUP_BODY_ENCODING;
   groupsMod.resetGroupBodyEncodingMemory();
+
+  // Live Central list shape { totalSize, results:[{groupId,...}] }
+  var liveList = JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/groups.list.live.json'), 'utf8'));
+  var livePack = groupsMod.parseGroupList(200, liveList);
+  ok('live list parses results', livePack.groups.length === 5);
+  ok('live list uses groupId as id', livePack.groups[0].id === '1' && livePack.groups[4].id === '14');
+  ok('live list finds 員工', groupsMod.findGroupByName(livePack.groups, '員工').id === '14');
+  ok('live list finds 員工 trimmed', groupsMod.findGroupByName(livePack.groups, ' 員工 ').id === '14');
+  ok('live list Employee case-insensitive', groupsMod.findGroupByName(livePack.groups, 'employee').id === '3');
+  ok('live list keeps type/color', livePack.groups[4].type === 'NORMAL' && livePack.groups[4].color === '#0070C0' && livePack.groups[4].patternId === 1);
+  var livePage = groupsMod.parseGroupListPage(200, liveList, 100);
+  ok('live list totalSize', livePage.totalSize === 5);
+  var picked = groupsMod.pickUnusedColorPattern(livePack.groups, '#0070C0', 1);
+  ok('pickUnused skips used default pair', picked && picked.color === '#C54C82' && picked.patternId === 1);
+  var pickedPref = groupsMod.pickUnusedColorPattern(livePack.groups, '#00B050', 3);
+  ok('pickUnused keeps free preferred', pickedPref && pickedPref.color === '#00B050' && pickedPref.patternId === 3);
+  ok(
+    'already-used detector',
+    groupsMod.isColorPatternAlreadyUsedError(400, {
+      errorMessage: 'The set of color and pattern is already used, try a different one.'
+    })
+  );
+  ok('already-used detector ignores other 400', !groupsMod.isColorPatternAlreadyUsedError(400, { errorMessage: 'name too long' }));
+  var liveCreate = JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/group.create.live.json'), 'utf8'));
+  var parsedCreate = groupsMod.parseCreatedGroup(200, liveCreate, '漫威');
+  ok('live create parses groupId', parsedCreate.id === '15' && parsedCreate.name === '漫威');
 
   // validate group required
   var validate = require(path.join(root, 'server/validate'));
@@ -565,18 +591,47 @@ async function httpIntegration() {
         if (req.url === '/api/website/group/list') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
-            data: {
-              list: [
-                { id: 1, name: 'Default', type: 'NORMAL' },
-                { id: 2, name: 'Employees', type: 'EMPLOYEE' }
-              ],
-              totalPages: 1
-            }
+            totalSize: 5,
+            results: [
+              { groupId: 1, name: 'VIP', type: 'VIP', memberCount: 0 },
+              { groupId: 3, name: 'Employee', type: 'EMPLOYEE', memberCount: 1 },
+              { groupId: 2, name: 'Blocklist', type: 'BLOCKLIST', memberCount: 0 },
+              { groupId: 4, name: 'Registered Visitor', type: 'VISITOR', memberCount: 0 },
+              { groupId: 14, name: '員工', type: 'NORMAL', color: '#0070C0', patternId: 1, memberCount: 0 }
+            ]
+          }));
+          return;
+        }
+        // create: reject default used pair (#0070C0 + patternId 1), then accept
+        var createBody = Buffer.concat(chunks).toString('binary');
+        var cVal = '';
+        var pVal = '';
+        var um = /(?:^|&)color=([^&]*)/.exec(createBody);
+        var pm = /(?:^|&)patternId=([^&]*)/.exec(createBody);
+        if (um) cVal = decodeURIComponent(um[1]).toUpperCase();
+        if (pm) pVal = String(pm[1]);
+        if (!cVal) {
+          var um2 = /name="color"\r\n\r\n([^\r\n]+)/.exec(createBody);
+          if (um2) cVal = String(um2[1]).toUpperCase();
+        }
+        if (!pVal) {
+          var pm2 = /name="patternId"\r\n\r\n([^\r\n]+)/.exec(createBody);
+          if (pm2) pVal = String(pm2[1]);
+        }
+        // Also detect URL-encoded hex in multipart/plain
+        if (/color[^\0]{0,40}#0070C0/i.test(createBody) && /patternId[^\0]{0,40}\D1(?:\D|$)/.test(createBody) && cVal === '') {
+          cVal = '#0070C0';
+          pVal = pVal || '1';
+        }
+        if (cVal === '#0070C0' && pVal === '1') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            errorMessage: 'The set of color and pattern is already used, try a different one.'
           }));
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ id: 99, name: 'NewFromTest' }));
+        res.end(JSON.stringify({ groupId: 99, name: 'NewFromTest', color: cVal || '#C54C82', patternId: Number(pVal) || 1 }));
         return;
       }
       res.writeHead(404);
@@ -593,7 +648,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09k', config.appVersion === 'v2026-11-09k');
+  ok('appVersion 09l', config.appVersion === 'v2026-11-09l');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -643,7 +698,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09k', health.status === 200 && health.json.appVersion === 'v2026-11-09k');
+  ok('health version 09l', health.status === 200 && health.json.appVersion === 'v2026-11-09l');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -928,7 +983,7 @@ async function httpIntegration() {
   centralG.listGroups = prevList;
   centralG.signIn = prevSign;
 
-  // --- group body encoding: JSON 415 → multipart success (v2026-11-09k) ---
+  // --- group body encoding: JSON 415 → multipart success (v2026-11-09l) ---
   var groupsEnc = require(path.join(root, 'server/central/groups'));
   var centralEnc = require(path.join(root, 'server/central/client'));
   var cfgEnc = require(path.join(root, 'server/config'));
@@ -943,8 +998,8 @@ async function httpIntegration() {
   centralEnc.signIn = async function () { return 'fake-token-for-tests-only-not-real'; };
   // Use real listGroupsRaw against the Content-Type-aware mock upstream
   var listPack = await centralEnc.listGroupsRaw('fake-token-for-tests-only-not-real');
-  ok('list recovers from JSON 415 via multipart', Array.isArray(listPack.groups) && listPack.groups.length === 2);
-  ok('list locked multipart encoding', listPack.bodyEncoding === 'multipart' || groupsEnc.getRememberedGroupBodyEncoding() === 'multipart');
+  ok('list recovers from JSON 415 via form/multipart', Array.isArray(listPack.groups) && listPack.groups.length === 5);
+  ok('list locked form or multipart encoding', listPack.bodyEncoding === 'form' || listPack.bodyEncoding === 'multipart' || groupsEnc.getRememberedGroupBodyEncoding() === 'form' || groupsEnc.getRememberedGroupBodyEncoding() === 'multipart');
   ok(
     'list encoding attempts include json 415',
     Array.isArray(listPack.attempted) &&
@@ -954,14 +1009,20 @@ async function httpIntegration() {
         return a.encoding === 'json' && a.status === 415;
       }) &&
       listPack.attempted[0].encodingAttempts.some(function (a) {
-        return a.encoding === 'multipart' && a.status === 200;
+        return (a.encoding === 'multipart' || a.encoding === 'form') && a.status === 200;
       })
   );
-  // create should reuse remembered multipart (no json attempt first)
+  // create should reuse remembered form/multipart; auto-pick unused color when #0070C0|1 taken
+  groupsEnc.rememberGroupBodyEncoding('form');
+  var createdEnc = await centralEnc.createGroup('fake-token-for-tests-only-not-real', '漫威', '#0070C0', 1);
+  ok('create auto-picks unused color/pattern', createdEnc && String(createdEnc.id) === '99');
+  ok('create avoids used #0070C0|1', createdEnc.color !== '#0070C0' || createdEnc.patternId !== 1);
+  ok('create reports form encoding', createdEnc.bodyEncoding === 'form');
+  // multipart still works when remembered
   groupsEnc.rememberGroupBodyEncoding('multipart');
-  var createdEnc = await centralEnc.createGroup('fake-token-for-tests-only-not-real', 'NewFromTest', '#0070C0', 1);
-  ok('create with multipart encoding', createdEnc && String(createdEnc.id) === '99');
-  ok('create reports multipart', createdEnc.bodyEncoding === 'multipart');
+  var createdMp = await centralEnc.createGroup('fake-token-for-tests-only-not-real', 'NewFromTest2', '#00B050', 2);
+  ok('create with multipart encoding', createdMp && String(createdMp.id) === '99');
+  ok('create reports multipart', createdMp.bodyEncoding === 'multipart');
   // env force json → 415 fail closed (no retry beyond forced)
   process.env.FACEME_GROUP_BODY_ENCODING = 'json';
   groupsEnc.resetGroupBodyEncodingMemory();
@@ -980,7 +1041,7 @@ async function httpIntegration() {
   // restore signIn if we overwrote (prevSign already restored above; re-stub only if needed later)
   centralEnc.signIn = prevSign;
 
-  // --- QC fail reasons on /api/register (v2026-11-09k) ---
+  // --- QC fail reasons on /api/register (v2026-11-09l) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -1078,7 +1139,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09k) ---
+  // --- skip TLS verify API (v2026-11-09l) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -1241,7 +1302,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09k');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09l');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

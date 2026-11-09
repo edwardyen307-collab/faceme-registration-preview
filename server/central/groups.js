@@ -91,13 +91,14 @@ function asObject(body) {
 function pickId(row) {
   if (row == null) return null;
   if (typeof row === 'string' || typeof row === 'number') return String(row);
+  // Live Central list uses groupId; prefer it over generic id
   const id =
-    row.id != null
-      ? row.id
-      : row.groupId != null
-        ? row.groupId
-        : row.group_id != null
-          ? row.group_id
+    row.groupId != null
+      ? row.groupId
+      : row.group_id != null
+        ? row.group_id
+        : row.id != null
+          ? row.id
           : row.uuid != null
             ? row.uuid
             : null;
@@ -128,8 +129,11 @@ function pickType(row) {
 function extractRows(obj) {
   if (!obj) return null;
   if (Array.isArray(obj)) return obj;
+  // Live Central (2026-11-09): { totalSize, results: [...] }
   const candidates = [
-    obj.data,
+    obj.results,
+    obj.data && obj.data.results,
+    obj.data && Array.isArray(obj.data) ? obj.data : null,
     obj.data && obj.data.list,
     obj.data && obj.data.groups,
     obj.data && obj.data.content,
@@ -157,14 +161,27 @@ function extractTotalPages(obj, pageSize, rowCount) {
     for (const k of ['totalPages', 'total_pages', 'pageCount', 'pages']) {
       if (r[k] != null && Number.isFinite(Number(r[k]))) return Number(r[k]);
     }
-    for (const k of ['total', 'totalCount', 'totalElements', 'count']) {
+    // Live Central uses totalSize (absolute row count)
+    for (const k of ['totalSize', 'total', 'totalCount', 'totalElements', 'count']) {
       if (r[k] != null && Number.isFinite(Number(r[k])) && pageSize > 0) {
         return Math.ceil(Number(r[k]) / pageSize);
       }
     }
   }
-  // If fewer rows than pageSize, assume last page
-  if (rowCount < pageSize) return null; // signal: stop after this page via caller
+  // If fewer rows than pageSize, assume last page (caller uses maybeMore)
+  if (rowCount < pageSize) return null;
+  return null;
+}
+
+/** Absolute total row count when Central sends totalSize (for paging). */
+function extractTotalSize(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const roots = [obj, obj.data, obj.entity].filter(Boolean);
+  for (const r of roots) {
+    for (const k of ['totalSize', 'total', 'totalCount', 'totalElements', 'count']) {
+      if (r[k] != null && Number.isFinite(Number(r[k]))) return Number(r[k]);
+    }
+  }
   return null;
 }
 
@@ -210,15 +227,41 @@ function parseGroupListPage(status, body, pageSize) {
     const id = pickId(row);
     const name = pickName(row) || (id ? String(id) : null);
     if (!id && !name) continue;
-    groups.push({
+    const g = {
       id: id || name,
       name: name || String(id),
       type: pickType(row)
-    });
+    };
+    if (row && typeof row === 'object') {
+      if (typeof row.color === 'string' && row.color.trim()) g.color = row.color.trim();
+      if (row.patternId != null && Number.isFinite(Number(row.patternId))) {
+        g.patternId = Number(row.patternId);
+      }
+      if (row.memberCount != null && Number.isFinite(Number(row.memberCount))) {
+        g.memberCount = Number(row.memberCount);
+      }
+    }
+    groups.push(g);
   }
+  const totalSize = extractTotalSize(obj);
   const totalPages = extractTotalPages(obj, pageSize, rows.length);
-  const maybeMore = totalPages != null ? null : rows.length >= pageSize;
-  return { groups, techDetails: masked, totalPages, maybeMore, rowCount: rows.length };
+  // maybeMore: prefer totalSize vs accumulated; else full page heuristic
+  let maybeMore = false;
+  if (totalPages != null) {
+    maybeMore = null; // caller uses totalPages
+  } else if (totalSize != null) {
+    maybeMore = rows.length < totalSize; // single-page view of absolute total
+  } else {
+    maybeMore = rows.length >= pageSize;
+  }
+  return {
+    groups,
+    techDetails: masked,
+    totalPages,
+    totalSize,
+    maybeMore,
+    rowCount: rows.length
+  };
 }
 
 /** Legacy single-shot parse used by tests */
@@ -287,8 +330,14 @@ function parseCreatedGroup(status, body, fallbackName) {
     throw err;
   }
   const obj = asObject(body) || {};
-  const nested = obj.data || obj.entity || obj.group || obj.result || obj;
-  const id = pickId(nested) || pickId(obj);
+  const nested =
+    obj.data ||
+    obj.entity ||
+    obj.group ||
+    obj.result ||
+    (Array.isArray(obj.results) && obj.results[0]) ||
+    obj;
+  const id = pickId(nested) || pickId(obj) || (obj.data && pickId(obj.data));
   const name = pickName(nested) || pickName(obj) || fallbackName;
   return {
     id: id != null ? String(id) : null,
@@ -316,7 +365,7 @@ function displayGroupLabel(g) {
 }
 
 /** Preferred encodings for group list/create (live Central: JSON → 415). */
-const GROUP_BODY_ENCODINGS = ['multipart', 'form', 'json'];
+const GROUP_BODY_ENCODINGS = ['form', 'multipart', 'json'];
 
 /** Process-lifetime remembered encoding that first succeeded (shared list+create). */
 let rememberedGroupBodyEncoding = null;
@@ -432,6 +481,65 @@ function buildGroupBody(fields, encoding) {
   };
 }
 
+
+function pairKey(color, patternId) {
+  return String(color || '').trim().toUpperCase() + '|' + String(patternId);
+}
+
+/** Collect used color|patternId pairs from listed groups. */
+function collectUsedColorPatternPairs(groups) {
+  const used = new Set();
+  for (const g of groups || []) {
+    if (!g || typeof g !== 'object') continue;
+    if (g.color == null || g.patternId == null) continue;
+    const c = String(g.color).trim();
+    const p = Number(g.patternId);
+    if (!c || !Number.isFinite(p)) continue;
+    used.add(pairKey(c, p));
+  }
+  return used;
+}
+
+/**
+ * Deterministic unused (color, patternId): colors in GROUP_COLORS order,
+ * for each color patternId 1..20. Skip pairs in used set.
+ * preferredColor/preferredPattern tried first if valid and unused.
+ */
+function pickUnusedColorPattern(groups, preferredColor, preferredPatternId) {
+  const used = collectUsedColorPatternPairs(groups);
+  const allowed = GROUP_COLORS.map((x) => x.toUpperCase());
+
+  function normalizePair(color, patternId) {
+    if (color == null || patternId == null) return null;
+    const idx = allowed.indexOf(String(color).trim().toUpperCase());
+    if (idx === -1) return null;
+    const p = Number.parseInt(patternId, 10);
+    if (!Number.isFinite(p) || p < 1 || p > 20) return null;
+    return { color: GROUP_COLORS[idx], patternId: p };
+  }
+
+  const pref = normalizePair(preferredColor, preferredPatternId);
+  if (pref && !used.has(pairKey(pref.color, pref.patternId))) return pref;
+
+  for (const color of GROUP_COLORS) {
+    for (let p = 1; p <= 20; p++) {
+      if (!used.has(pairKey(color, p))) {
+        return { color: color, patternId: p };
+      }
+    }
+  }
+  return null;
+}
+
+function isColorPatternAlreadyUsedError(status, body) {
+  if (status !== 400) return false;
+  const obj = asObject(body);
+  const msg = String(
+    (obj && (obj.errorMessage || obj.message || obj.msg || obj.error)) || body || ''
+  );
+  return /color and pattern is already used|already used|顏色.*圖示|已使用/i.test(msg);
+}
+
 function createGroupRequestBody(name, color, patternId) {
   return { name: name, color: color, patternId: patternId };
 }
@@ -462,10 +570,15 @@ module.exports = {
   findGroupByName,
   displayGroupLabel,
   extractRows,
+  extractTotalSize,
   asObject,
   pickId,
   pickName,
   pickType,
+  collectUsedColorPatternPairs,
+  pickUnusedColorPattern,
+  isColorPatternAlreadyUsedError,
+  pairKey,
   normalizeGroupBodyEncoding,
   envGroupBodyEncoding,
   getRememberedGroupBodyEncoding,

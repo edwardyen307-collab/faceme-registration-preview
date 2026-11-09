@@ -24,7 +24,11 @@ const {
   groupBodyEncodingOrder,
   rememberGroupBodyEncoding,
   getRememberedGroupBodyEncoding,
-  resetGroupBodyEncodingMemory
+  resetGroupBodyEncodingMemory,
+  pickUnusedColorPattern,
+  isColorPatternAlreadyUsedError,
+  DEFAULT_COLOR,
+  DEFAULT_PATTERN_ID
 } = require('./groups');
 const { maskQcPayload } = require('./qc-explain');
 const {
@@ -259,7 +263,10 @@ async function listGroupsRaw(token) {
       all.push(g);
     }
 
-    if (page.totalPages != null) {
+    if (page.totalSize != null) {
+      if (all.length >= page.totalSize) break;
+      if (page.rowCount === 0) break;
+    } else if (page.totalPages != null) {
       if (pageIndex + 1 >= page.totalPages) break;
     } else if (!page.maybeMore) {
       break;
@@ -323,60 +330,135 @@ async function probeGroups(token) {
 }
 
 async function createGroup(token, name, color, patternId) {
-  const fields = validateGroupCreateFields(name, color, patternId);
-  const path = groupCreatePath();
-  // Confirmed required: name, color, patternId — do NOT send type
-  // Live Central: JSON → 415; try multipart → form → json (only on 415)
-  const pack = await postGroupWithEncoding(
-    token,
-    path,
-    createGroupRequestBody(fields.name, fields.color, fields.patternId)
+  // Validate name first (color/pattern may be auto-picked to avoid Central uniqueness clash)
+  // Name validation only — color/pattern may be replaced by unused-pair picker
+  const nameOnly = validateGroupCreateFields(
+    name,
+    color != null ? color : DEFAULT_COLOR,
+    patternId != null ? patternId : DEFAULT_PATTERN_ID
   );
-  let created;
-  try {
-    created = parseCreatedGroup(pack.result.status, pack.result.body, fields.name);
-  } catch (createErr) {
-    createErr.encodingAttempts = pack.attempts;
-    createErr.bodyEncoding = pack.encoding;
-    if (pack.attempts && pack.attempts.length) {
-      createErr.message =
-        (createErr.message || '建立群組失敗') +
-        '（嘗試編碼：' +
-        pack.attempts.map((a) => a.encoding + '=' + a.status).join(', ') +
-        '）';
+  const path = groupCreatePath();
+  const maxAttempts = 3;
+  let lastErr = null;
+  let lastPack = null;
+  let chosen = null;
+  const excludedPairs = []; // pairs Central rejected as already-used (may be absent from list)
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let groups = [];
+    try {
+      groups = await listGroups(token);
+    } catch (_) {
+      groups = [];
     }
-    throw createErr;
-  }
-  if (!created.id) {
-    // Re-list and resolve by name (fail-closed if still missing)
-    const groups = await listGroups(token);
-    const found = findGroupByName(groups, fields.name);
-    if (!found || !found.id) {
+    // Merge synthetic used entries for pairs we already know are taken
+    const groupsForPick = groups.concat(
+      excludedPairs.map(function (pair) {
+        return { color: pair.color, patternId: pair.patternId };
+      })
+    );
+    // Prefer UI color/pattern if still unused; else first free pair (color-major order)
+    const picked = pickUnusedColorPattern(
+      groupsForPick,
+      attempt === 0 ? color : null,
+      attempt === 0 ? patternId : null
+    );
+    if (!picked) {
       const err = new Error(
-        '已建立群組「' + fields.name + '」但回應沒有 id，重新列表也找不到。請到 Central 確認後再匯入。'
+        '找不到尚未使用的群組顏色／圖示組合（Central 要求每組唯一）。請到 Central 調整現有群組後再試。'
       );
-      err.code = 'GROUP_CREATE_ID_MISSING';
-      err.status = 502;
-      err.techDetails = created.techDetails || null;
-      err.encodingAttempts = pack.attempts;
+      err.code = 'GROUP_COLOR_PATTERN_EXHAUSTED';
+      err.status = 409;
       throw err;
     }
+    chosen = picked;
+    const fields = validateGroupCreateFields(nameOnly.name, picked.color, picked.patternId);
+
+    const pack = await postGroupWithEncoding(
+      token,
+      path,
+      createGroupRequestBody(fields.name, fields.color, fields.patternId)
+    );
+    lastPack = pack;
+
+    if (isColorPatternAlreadyUsedError(pack.result.status, pack.result.body)) {
+      // Race / incomplete list — exclude this pair and try next
+      excludedPairs.push({ color: fields.color, patternId: fields.patternId });
+      lastErr = new Error(
+        '顏色與圖示組合已被使用（' + fields.color + ' / ' + fields.patternId + '），改試下一組…'
+      );
+      lastErr.code = 'GROUP_COLOR_PATTERN_USED';
+      lastErr.status = 400;
+      lastErr.techDetails = pack.result.body;
+      continue;
+    }
+
+    let created;
+    try {
+      created = parseCreatedGroup(pack.result.status, pack.result.body, fields.name);
+    } catch (createErr) {
+      createErr.encodingAttempts = pack.attempts;
+      createErr.bodyEncoding = pack.encoding;
+      if (pack.attempts && pack.attempts.length) {
+        createErr.message =
+          (createErr.message || '建立群組失敗') +
+          '（嘗試編碼：' +
+          pack.attempts.map((a) => a.encoding + '=' + a.status).join(', ') +
+          '）';
+      }
+      throw createErr;
+    }
+
+    if (!created.id) {
+      const listed = await listGroups(token);
+      const found = findGroupByName(listed, fields.name);
+      if (!found || !found.id) {
+        const err = new Error(
+          '已建立群組「' +
+            fields.name +
+            '」但回應沒有 id，重新列表也找不到。請到 Central 確認後再匯入。'
+        );
+        err.code = 'GROUP_CREATE_ID_MISSING';
+        err.status = 502;
+        err.techDetails = created.techDetails || null;
+        err.encodingAttempts = pack.attempts;
+        throw err;
+      }
+      return {
+        id: String(found.id),
+        name: found.name || fields.name,
+        type: found.type || null,
+        color: fields.color,
+        patternId: fields.patternId,
+        techDetails: created.techDetails,
+        resolvedViaList: true,
+        bodyEncoding: pack.encoding || getRememberedGroupBodyEncoding()
+      };
+    }
     return {
-      id: String(found.id),
-      name: found.name || fields.name,
-      type: found.type || null,
+      id: String(created.id),
+      name: created.name || fields.name,
+      color: fields.color,
+      patternId: fields.patternId,
       techDetails: created.techDetails,
-      resolvedViaList: true,
+      resolvedViaList: false,
       bodyEncoding: pack.encoding || getRememberedGroupBodyEncoding()
     };
   }
-  return {
-    id: String(created.id),
-    name: created.name || fields.name,
-    techDetails: created.techDetails,
-    resolvedViaList: false,
-    bodyEncoding: pack.encoding || getRememberedGroupBodyEncoding()
-  };
+
+  const err = new Error(
+    '無法建立群組「' +
+      nameOnly.name +
+      '」：顏色／圖示組合與現有群組衝突，已重試 ' +
+      maxAttempts +
+      ' 次仍失敗。請到 Central 手動建立，或換一組顏色／圖示後再試。'
+  );
+  err.code = 'GROUP_COLOR_PATTERN_USED';
+  err.status = 409;
+  err.techDetails = lastErr && lastErr.techDetails ? lastErr.techDetails : null;
+  if (lastPack && lastPack.attempts) err.encodingAttempts = lastPack.attempts;
+  if (chosen) err.triedPair = chosen;
+  throw err;
 }
 
 async function personImport(token, { name, employeeId, imageBuffer, filename, mime, groupId, information }) {
