@@ -540,3 +540,28 @@ textarea:focus-visible,
   max-height: 220px;
   overflow: auto;
 }
+
+.settings-details {
+  border: none;
+}
+.settings-summary {
+  cursor: pointer;
+  font-size: 1.15rem;
+  font-weight: 700;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.settings-summary::-webkit-details-marker { display: none; }
+.settings-summary-hint {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted, #667085);
+}
+.settings-body {
+  margin-top: 0.75rem;
+}
+.settings-details[open] .settings-summary-hint::after {
+  content: "";
+}

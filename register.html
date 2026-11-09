@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-09h</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-09i</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,14 +14,17 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09h</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09i</span>
     </div>
   </header>
 
   <main>
     <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
     <section class="card settings-card" aria-labelledby="api-settings-heading">
-      <h2 id="api-settings-heading">連線設定</h2>
+      <details id="settings-details" class="settings-details">
+        <summary id="api-settings-heading" class="settings-summary">連線設定 <span class="settings-summary-hint">（點此展開／收合）</span></summary>
+        <div class="settings-body">
+
       <p class="hint">① 瀏覽器→薄後端；② 薄後端→Central。變更 API base 會清除同意狀態。</p>
       <h3 class="settings-sub">① 瀏覽器 → 薄後端（API base）</h3>
       <p class="hint">存在 localStorage。姓名／照片只當次送到薄後端，前端不持久保存。</p>
@@ -64,6 +67,9 @@
       </div>
       <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
 
+    
+        </div>
+      </details>
     </section>
     <section class="card" aria-labelledby="register-heading">
       <h2 id="register-heading" class="sr-only">註冊表單</h2>
@@ -109,6 +115,28 @@
         </div>
 
         <div class="field">
+          <label for="group-name">
+            群組 <span class="required" aria-hidden="true">*</span>
+            <span class="sr-only">（必填）</span>
+          </label>
+          <input
+            type="text"
+            id="group-name"
+            name="groupName"
+            list="group-list"
+            required
+            maxlength="64"
+            placeholder="選擇或輸入群組名稱"
+            autocomplete="off"
+            aria-describedby="group-hint group-error"
+          />
+          <datalist id="group-list"></datalist>
+          <span class="hint" id="group-hint">必填。可從清單選擇現有群組，或輸入新名稱（新名稱會在真實模式寫入 Central 建立群組後再匯入）。</span>
+          <div class="error" id="group-error" role="alert" aria-live="polite"></div>
+          <div class="api-status" id="group-status" aria-live="polite"></div>
+        </div>
+
+        <div class="field">
           <label for="face-photo">人臉照片</label>
           <div class="photo-box">
             <p class="hint" id="photo-hint" style="margin-top:0">
@@ -151,7 +179,7 @@
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09h
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09i
   </footer>
   <script src="app.js"></script>
 </body>

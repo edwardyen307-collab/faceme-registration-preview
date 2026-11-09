@@ -5,13 +5,21 @@ const multer = require('multer');
 const {
   config,
   assertRealModeReady,
+  assertCentralCredentials,
   setFacemeBaseUrl,
   setSkipTlsVerify,
   canEnableSkipTlsVerify
 } = require('../config');
 const { issueTicket, consumeTicket } = require('../consent');
-const { validateName, validateEmployeeId, validateImageFile } = require('../validate');
+const {
+  validateName,
+  validateEmployeeId,
+  validateGroupName,
+  validateImageFile
+} = require('../validate');
 const central = require('../central/client');
+const { findGroupByName } = require('../central/groups');
+const { buildUserDetailUrl } = require('../central/adapters');
 const {
   validateCentralBaseUrl,
   upsertFacemeBaseUrl,
@@ -25,7 +33,7 @@ const upload = multer({
   limits: {
     fileSize: config.maxUploadBytes,
     files: 1,
-    fields: 10
+    fields: 20
   }
 });
 
@@ -145,6 +153,26 @@ router.put('/local-settings/skip-tls-verify', express.json({ limit: '4kb' }), (r
   }
 });
 
+
+router.get('/groups', async (req, res, next) => {
+  try {
+    // Read-only list: needs Central credentials, does NOT require real-mode write flags.
+    // Tokens never leave the server.
+    assertCentralCredentials();
+    const token = await central.signIn();
+    const groups = await central.listGroups(token);
+    res.json({
+      ok: true,
+      groups: groups,
+      guessed: true,
+      note:
+        '群組列表端點為猜測（預設 GET /api/website/group）。可用 FACEME_GROUP_LIST_PATH 覆寫。權杖不會回傳給瀏覽器。'
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post('/connection-test', express.json({ limit: '8kb' }), async (req, res, next) => {
   try {
     // Allowed even when FACEME_REAL_MODE=0. Does not change write gates.
@@ -189,13 +217,17 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
   try {
     assertRealModeReady();
 
-    const ticket = req.body && req.body.consentTicket;
-    consumeTicket(ticket, config.statementVersion);
-
+    // Validate inputs BEFORE consuming consent ticket (avoid burning tickets on 400s)
     const name = validateName(req.body && req.body.name);
     const employeeId = validateEmployeeId(req.body && req.body.employeeId);
+    const groupName = validateGroupName(
+      (req.body && (req.body.groupName || req.body.group)) || ''
+    );
     const imgMeta = validateImageFile(req.file);
     imageBuffer = req.file.buffer;
+
+    const ticket = req.body && req.body.consentTicket;
+    consumeTicket(ticket, config.statementVersion);
 
     const token = await central.signIn();
     const qc = await central.snapshotQc(
@@ -213,13 +245,53 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
       throw err;
     }
 
-    const personId = await central.personImport(token, {
+    // Resolve group: match existing (case-insensitive) or create (real-mode write)
+    let groups = [];
+    try {
+      groups = await central.listGroups(token);
+    } catch (listErr) {
+      // Creating still possible if list fails; match won't work
+      groups = [];
+    }
+    let group = findGroupByName(groups, groupName);
+    let groupCreated = false;
+    if (!group) {
+      try {
+        group = await central.createGroup(token, groupName);
+        groupCreated = true;
+      } catch (createErr) {
+        const err = new Error(
+          '無法建立群組「' +
+            groupName +
+            '」，已取消匯入：' +
+            ((createErr && createErr.message) || '建立失敗')
+        );
+        err.code = (createErr && createErr.code) || 'GROUP_CREATE_FAILED';
+        err.status = 502;
+        err.reasons = [
+          {
+            id: 'group_create_failed',
+            text: err.message,
+            hint: '請先在 Central 手動建立同名群組，或檢查 FACEME_GROUP_CREATE_PATH 是否符合 swagger'
+          }
+        ];
+        err.techDetails = createErr && createErr.techDetails ? createErr.techDetails : null;
+        throw err;
+      }
+    }
+
+    const imported = await central.personImport(token, {
       name,
       employeeId,
       imageBuffer,
       filename: imgMeta.filename,
-      mime: imgMeta.mime
+      mime: imgMeta.mime,
+      groupId: group.id,
+      groupName: group.name || groupName
     });
+    const personId = typeof imported === 'object' ? imported.personId : imported;
+    const techDetails = typeof imported === 'object' ? imported.techDetails : null;
+    const detailUrl = buildUserDetailUrl(config.facemeBaseUrl, personId);
 
     // Drop buffer reference ASAP
     imageBuffer = null;
@@ -229,7 +301,10 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
       personId,
       mode: 'real',
       imported: true,
-      message: '已成功匯入 Central'
+      message: '已成功匯入 Central',
+      group: { id: group.id, name: group.name || groupName, created: groupCreated },
+      detailUrl: detailUrl,
+      techDetails: techDetails
     });
   } catch (e) {
     imageBuffer = null;

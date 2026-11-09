@@ -9,6 +9,8 @@ function sendError(res, err) {
   if (Array.isArray(err.reasons)) payload.reasons = err.reasons;
   if (err.techDetails != null) payload.techDetails = err.techDetails;
   if (err.hint) payload.hint = err.hint;
+  if (err.similarPersonId != null) payload.similarPersonId = err.similarPersonId;
+  if (err.detailUrl) payload.detailUrl = err.detailUrl;
   res.status(status).json(payload);
 }
 

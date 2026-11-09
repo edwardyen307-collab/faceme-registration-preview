@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09h
+FaceMe update pack v2026-11-09i
 ===============================
 DO NOT overwrite: .env
 
@@ -10,26 +10,12 @@ REQUIRED:
 - register.html
 - styles.css
 - statement-version.json
-- server/statement-version.js
-- server/upstream-errors.js
-- server/config.js
-- server/consent.js
-- server/index.js
-- server/tls-options.js
-- server/env-file.js
-- server/load-dotenv.js
-- server/local-admin.js
-- server/routes/api.js
-- server/middleware/cors.js
-- server/middleware/errors.js
-- server/central/client.js
-- server/central/adapters.js
-- server/central/qc-explain.js
-- server/fixtures/**
+- server/**
 - package.json
 - package-lock.json
 
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
-After replace: close old node windows, start.bat, hard-refresh.
-CRITICAL: quality_result:true + condition.*:true means PASS (true≠有問題).
+After replace: close old node, start.bat, hard-refresh.
+New: required 群組 field; settings panel collapsed by default; 406 similar-person ZH.
+Group API paths are GUESSED — set FACEME_GROUP_* in .env if swagger differs.

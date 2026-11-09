@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09h</title>
+  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09i</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="consent">
@@ -14,14 +14,17 @@
         <h1>人臉資料蒐集個資聲明</h1>
         <p>FaceMe 註冊前同意流程（靜態預覽）</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09h</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09i</span>
     </div>
   </header>
 
   <main>
     <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
     <section class="card settings-card" aria-labelledby="api-settings-heading">
-      <h2 id="api-settings-heading">連線設定</h2>
+      <details id="settings-details" class="settings-details">
+        <summary id="api-settings-heading" class="settings-summary">連線設定 <span class="settings-summary-hint">（點此展開／收合）</span></summary>
+        <div class="settings-body">
+
       <p class="hint">① 與 ② 是不同位址：① 是瀏覽器連到薄後端；② 是薄後端連到 FaceMe Central。</p>
       <h3 class="settings-sub">① 瀏覽器 → 薄後端（API base）</h3>
       <p class="hint">
@@ -66,6 +69,9 @@
       </div>
       <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
 
+    
+        </div>
+      </details>
     </section>
     <section class="card" aria-labelledby="notice-heading">
       <div class="draft-banner" role="status">
@@ -175,7 +181,7 @@
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09h
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09i
   </footer>
   <script src="app.js"></script>
 </body>

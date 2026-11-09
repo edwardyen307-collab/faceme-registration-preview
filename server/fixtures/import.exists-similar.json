@@ -1,0 +1,5 @@
+{
+  "message": "Exists similar person",
+  "personId": 2,
+  "detail": "https://127.0.0.1/user-detail?id=2"
+}

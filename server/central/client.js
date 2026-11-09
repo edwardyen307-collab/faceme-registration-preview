@@ -8,6 +8,13 @@ const {
   parseImportPersonId
 } = require('./adapters');
 const {
+  groupListPath,
+  groupCreatePath,
+  importGroupField,
+  parseGroupList,
+  parseCreatedGroup
+} = require('./groups');
+const {
   buildTlsSocketOptions,
   sanitizeConnectOptions,
   explainTlsFailure,
@@ -129,10 +136,41 @@ async function snapshotQc(token, imageBuffer, filename, mime) {
   return parseQcResult(result.status, result.body);
 }
 
-async function personImport(token, { name, employeeId, imageBuffer, filename, mime }) {
+async function listGroups(token) {
+  const path = groupListPath();
+  const result = await upstream(path, {
+    method: 'GET',
+    headers: { Authorization: token }
+  });
+  return parseGroupList(result.status, result.body);
+}
+
+async function createGroup(token, name) {
+  const path = groupCreatePath();
+  // GUESSED body: JSON { name } — override path via env if swagger differs
+  const result = await upstream(path, {
+    method: 'POST',
+    headers: {
+      Authorization: token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name: name })
+  });
+  return parseCreatedGroup(result.status, result.body, name);
+}
+
+async function personImport(token, { name, employeeId, imageBuffer, filename, mime, groupId, groupName }) {
   const fd = new FormData();
   fd.append('name', name);
   if (employeeId) fd.append('employeeId', employeeId);
+  const field = importGroupField();
+  if (groupId != null && groupId !== '') {
+    fd.append(field, String(groupId));
+    // Also send common aliases so slightly different Central builds may accept one
+    if (field !== 'groupId') fd.append('groupId', String(groupId));
+    if (field !== 'groupIds') fd.append('groupIds', String(groupId));
+  }
+  if (groupName) fd.append('groupName', String(groupName));
   fd.append('snapshot', blobPart(imageBuffer, mime), filename || 'face.jpg');
   const result = await upstream('/api/website/person/import', {
     method: 'POST',
@@ -141,7 +179,7 @@ async function personImport(token, { name, employeeId, imageBuffer, filename, mi
     },
     body: fd
   });
-  return parseImportPersonId(result.status, result.body);
+  return parseImportPersonId(result.status, result.body, { baseUrl: config.facemeBaseUrl });
 }
 
 
@@ -360,6 +398,8 @@ async function connectionProbe(options) {
 module.exports = {
   signIn,
   snapshotQc,
+  listGroups,
+  createGroup,
   personImport,
   upstream,
   connectionProbe,

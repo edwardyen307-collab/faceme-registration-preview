@@ -99,9 +99,33 @@ function validateImageFile(file) {
   return { mime: sniffed, filename: file.originalname || 'face.jpg' };
 }
 
+function validateGroupName(raw) {
+  const n = String(raw == null ? '' : raw).trim();
+  if (!n) {
+    const err = new Error('群組為必填，請選擇或輸入群組名稱');
+    err.code = 'GROUP_REQUIRED';
+    err.status = 400;
+    throw err;
+  }
+  if (n.length > 64) {
+    const err = new Error('群組名稱過長（上限 64 字）');
+    err.code = 'GROUP_TOO_LONG';
+    err.status = 400;
+    throw err;
+  }
+  if (/[<>"'`]/.test(n)) {
+    const err = new Error('群組名稱含有不允許的字元');
+    err.code = 'GROUP_BAD_CHARS';
+    err.status = 400;
+    throw err;
+  }
+  return n;
+}
+
 module.exports = {
   validateName,
   validateEmployeeId,
+  validateGroupName,
   validateImageFile,
   sniffImageMime,
   ALLOWED_MIME

@@ -58,7 +58,7 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-09h',
+  appVersion: 'v2026-11-09i',
   envDiagnostics
 };
 
@@ -70,6 +70,21 @@ if (config.skipTlsVerify && !centralHostIsLoopback(config.facemeBaseUrl)) {
   envDiagnostics.warnings.push(
     'FACEME_SKIP_TLS_VERIFY 已在記憶體關閉：Central 位址不是 127.0.0.1／localhost／::1。略過憑證僅允許本機 Central。'
   );
+}
+
+function assertCentralCredentials() {
+  if (!config.facemeBaseUrl) {
+    const err = new Error('伺服器未設定 FACEME_BASE_URL');
+    err.code = 'MISSING_BASE_URL';
+    err.status = 503;
+    throw err;
+  }
+  if (!config.facemeAccount || !config.facemePassword) {
+    const err = new Error('伺服器未設定 Central 帳密');
+    err.code = 'MISSING_CREDENTIALS';
+    err.status = 503;
+    throw err;
+  }
 }
 
 function assertRealModeReady() {
@@ -87,18 +102,7 @@ function assertRealModeReady() {
     err.status = 503;
     throw err;
   }
-  if (!config.facemeBaseUrl) {
-    const err = new Error('伺服器未設定 FACEME_BASE_URL');
-    err.code = 'MISSING_BASE_URL';
-    err.status = 503;
-    throw err;
-  }
-  if (!config.facemeAccount || !config.facemePassword) {
-    const err = new Error('伺服器未設定 Central 帳密');
-    err.code = 'MISSING_CREDENTIALS';
-    err.status = 503;
-    throw err;
-  }
+  assertCentralCredentials();
 }
 
 function setFacemeBaseUrl(normalized) {
@@ -120,6 +124,7 @@ function canEnableSkipTlsVerify(baseUrl) {
 module.exports = {
   config,
   assertRealModeReady,
+  assertCentralCredentials,
   loadDotEnv,
   setFacemeBaseUrl,
   setSkipTlsVerify,

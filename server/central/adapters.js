@@ -55,7 +55,9 @@ function parseSignInToken(status, body, contentType) {
 
 const {
   buildQcFailurePayload,
-  buildImportFailurePayload
+  buildImportFailurePayload,
+  maskQcPayload,
+  appendQcLog
 } = require('./qc-explain');
 
 /**
@@ -117,24 +119,126 @@ function parseQcResult(status, body) {
 }
 
 /**
- * Import success → personId.
- * Assumed: { personId } | { data: { personId } } | { id }.
- * Failures attach ZH reasons + masked techDetails.
+ * Same-host check for Central detail links (Exists similar person).
+ * Only allow http(s) URLs whose host matches FACEME_BASE_URL host.
  */
-function parseImportPersonId(status, body) {
-  function fail(message, code) {
-    const payload = buildImportFailurePayload(status, body, { code: code, message: message });
+function sameHostDetailUrl(candidate, baseUrl) {
+  if (!candidate || !baseUrl) return null;
+  try {
+    const u = new URL(String(candidate));
+    const b = new URL(String(baseUrl));
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (u.username || u.password) return null;
+    if (u.hostname.toLowerCase() !== b.hostname.toLowerCase()) return null;
+    return u.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
+function extractSimilarPerson(obj) {
+  if (!obj || typeof obj !== 'object') return { id: null, detail: null, message: null };
+  const nested = obj.data && typeof obj.data === 'object' ? obj.data : obj;
+  const message =
+    (typeof obj.message === 'string' && obj.message) ||
+    (typeof obj.msg === 'string' && obj.msg) ||
+    (typeof obj.error === 'string' && obj.error) ||
+    (typeof nested.message === 'string' && nested.message) ||
+    null;
+  const id =
+    nested.personId != null
+      ? nested.personId
+      : nested.similarPersonId != null
+        ? nested.similarPersonId
+        : nested.id != null
+          ? nested.id
+          : obj.personId != null
+            ? obj.personId
+            : null;
+  const detail =
+    (typeof nested.detail === 'string' && nested.detail) ||
+    (typeof nested.url === 'string' && nested.url) ||
+    (typeof nested.link === 'string' && nested.link) ||
+    (typeof obj.detail === 'string' && obj.detail) ||
+    (typeof obj.url === 'string' && obj.url) ||
+    null;
+  return { id: id != null ? String(id) : null, detail, message };
+}
+
+function isExistsSimilarPerson(status, obj) {
+  if (status !== 406 && status !== 409) {
+    // still detect by message on other 4xx
+    if (status < 400 || status >= 500) return false;
+  }
+  const { message } = extractSimilarPerson(obj);
+  if (message && /exists\s*similar\s*person/i.test(message)) return true;
+  if (message && /相似/.test(message)) return true;
+  if (status === 406) return true; // observed Central uses 406 for this case
+  return false;
+}
+
+/**
+ * Import success → { personId, techDetails }.
+ * Failures attach ZH reasons + masked techDetails.
+ * Always logs masked Central body to runtime logs.
+ */
+function parseImportPersonId(status, body, options) {
+  const baseUrl = (options && options.baseUrl) || '';
+  const obj = asObject(body);
+  const masked = maskQcPayload(obj != null ? obj : body);
+  try {
+    appendQcLog(masked, {
+      pass: status >= 200 && status < 300,
+      code: 'IMPORT_RESPONSE',
+      reasonCount: 0,
+      httpStatus: status
+    });
+  } catch (_) {}
+
+  function fail(message, code, extra) {
+    let payload;
+    if (extra && extra.reasons) {
+      payload = { reasons: extra.reasons, techDetails: masked };
+    } else {
+      payload = buildImportFailurePayload(status, body, { code: code, message: message });
+      payload.techDetails = masked;
+    }
     const err = new Error(message);
     err.code = code;
-    err.status = 502;
+    err.status = extra && extra.status != null ? extra.status : 502;
     err.reasons = payload.reasons;
     err.techDetails = payload.techDetails;
+    if (extra && extra.similarPersonId) err.similarPersonId = extra.similarPersonId;
+    if (extra && extra.detailUrl) err.detailUrl = extra.detailUrl;
     throw err;
   }
+
   if (status < 200 || status >= 300) {
+    if (isExistsSimilarPerson(status, obj || {})) {
+      const sim = extractSimilarPerson(obj || {});
+      const safeUrl = sameHostDetailUrl(sim.detail, baseUrl);
+      const idPart = sim.id ? '（相似人員 #' + sim.id + '）' : '';
+      const msg = '此人已註冊過' + idPart;
+      const reasons = [
+        {
+          id: 'exists_similar_person',
+          text: msg,
+          hint: safeUrl
+            ? '可開啟 Central 人員頁確認：' + safeUrl
+            : sim.id
+              ? '請到 Central 人員列表搜尋 #' + sim.id + ' 確認（詳情網址主機不符，已隱藏連結）'
+              : '請到 Central 人員列表確認是否已有相似人臉'
+        }
+      ];
+      fail(msg, 'IMPORT_EXISTS_SIMILAR', {
+        status: 409,
+        reasons,
+        similarPersonId: sim.id,
+        detailUrl: safeUrl
+      });
+    }
     fail('Central 匯入失敗（HTTP ' + status + '）', 'IMPORT_FAILED');
   }
-  const obj = asObject(body);
   if (!obj) {
     fail('Central 匯入回應格式未知（fail closed）', 'IMPORT_SHAPE_UNKNOWN');
   }
@@ -146,13 +250,29 @@ function parseImportPersonId(status, body) {
   if (!personId) {
     fail('Central 匯入回應缺少 personId（fail closed）', 'IMPORT_PERSON_ID_MISSING');
   }
-  return personId;
+  return { personId: String(personId), techDetails: masked };
+}
+
+function buildUserDetailUrl(baseUrl, personId) {
+  try {
+    const b = new URL(String(baseUrl));
+    b.pathname = '/user-detail';
+    b.search = '?id=' + encodeURIComponent(String(personId));
+    b.hash = '';
+    return b.toString();
+  } catch (_) {
+    return null;
+  }
 }
 
 module.exports = {
   parseSignInToken,
   parseQcResult,
   parseImportPersonId,
+  sameHostDetailUrl,
+  extractSimilarPerson,
+  isExistsSimilarPerson,
+  buildUserDetailUrl,
   asObject,
   buildQcFailurePayload,
   buildImportFailurePayload

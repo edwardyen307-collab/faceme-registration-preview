@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09h', /v2026-11-09h/.test(text));
+  ok('start.bat version banner 09i', /v2026-11-09i/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09h in pages', /v2026-11-09h/.test(indexHtml) && /v2026-11-09h/.test(registerHtml));
+ok('version v2026-11-09i in pages', /v2026-11-09i/.test(indexHtml) && /v2026-11-09i/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -87,6 +87,11 @@ ok('footer updater present', /updateAppFooter/.test(js) && /本機版 · 已連�
 ok('structured failure handles import', /IMPORT_PERSON_ID_MISSING/.test(js));
 
 ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
+
+ok('group field in register page', /group-name/.test(registerHtml) && /group-list/.test(registerHtml));
+ok('settings collapsible details', /settings-details/.test(indexHtml) && /settings-details/.test(registerHtml));
+ok('groups module exists', fs.existsSync(path.join(root, 'server/central/groups.js')));
+ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js));
 
 ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
 ok('load-dotenv module exists', fs.existsSync(path.join(root, 'server/load-dotenv.js')));
@@ -313,6 +318,50 @@ function adapterTests() {
     ok('import failure masks token', e.techDetails && e.techDetails.token === '[redacted]');
     ok('import failure no raw token', !/leak-import-token/.test(JSON.stringify(e.techDetails)));
   }
+
+  // 406 Exists similar person
+  try {
+    adapters.parseImportPersonId(
+      406,
+      JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/import.exists-similar.json'), 'utf8')),
+      { baseUrl: 'https://127.0.0.1' }
+    );
+    ok('406 similar throws', false);
+  } catch (e406) {
+    ok('406 similar code', e406.code === 'IMPORT_EXISTS_SIMILAR');
+    ok('406 similar ZH', /已註冊過/.test(e406.message) && /#2/.test(e406.message));
+    ok('406 similar same-host url', e406.detailUrl === 'https://127.0.0.1/user-detail?id=2');
+  }
+  try {
+    adapters.parseImportPersonId(
+      406,
+      { message: 'Exists similar person', personId: 2, detail: 'https://evil.example/user-detail?id=2' },
+      { baseUrl: 'https://127.0.0.1' }
+    );
+  } catch (eEvil) {
+    ok('406 evil host rejected', !eEvil.detailUrl && /主機不符|人員列表/.test(JSON.stringify(eEvil.reasons)));
+  }
+  ok('buildUserDetailUrl', adapters.buildUserDetailUrl('https://127.0.0.1:443', '5') === 'https://127.0.0.1:443/user-detail?id=5' || /user-detail\?id=5/.test(adapters.buildUserDetailUrl('https://127.0.0.1', '5')));
+
+  // groups adapter
+  var groupsMod = require(path.join(root, 'server/central/groups'));
+  var glist = groupsMod.parseGroupList(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/groups.list.json'), 'utf8')));
+  ok('parseGroupList length', glist.length === 2);
+  ok('findGroupByName case-insensitive', groupsMod.findGroupByName(glist, 'employees').id === '2');
+  ok('findGroupByName miss', groupsMod.findGroupByName(glist, 'NoSuch') === null);
+  var created = groupsMod.parseCreatedGroup(200, { id: '9', name: 'NewTeam' }, 'NewTeam');
+  ok('parseCreatedGroup', created.id === '9' && created.name === 'NewTeam');
+
+  // validate group required
+  var validate = require(path.join(root, 'server/validate'));
+  try {
+    validate.validateGroupName('  ');
+    ok('group required', false);
+  } catch (eg) {
+    ok('group required', eg.code === 'GROUP_REQUIRED' && eg.status === 400);
+  }
+  ok('group trim', validate.validateGroupName('  Team A  ') === 'Team A');
+
 }
 
 async function sleep(ms) {
@@ -461,7 +510,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09h', config.appVersion === 'v2026-11-09h');
+  ok('appVersion 09i', config.appVersion === 'v2026-11-09i');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -511,7 +560,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09h', health.status === 200 && health.json.appVersion === 'v2026-11-09h');
+  ok('health version 09i', health.status === 200 && health.json.appVersion === 'v2026-11-09i');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -738,7 +787,57 @@ async function httpIntegration() {
 
 
 
-  // --- QC fail reasons on /api/register (v2026-11-09h) ---
+
+  // --- group required on register ---
+  var noGroupBody = (function () {
+    var boundary = '----nogroup' + Date.now();
+    var imgBuf = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    function mp(name, val, filename, ctype) {
+      var head = '--' + boundary + '\r\nContent-Disposition: form-data; name="' + name + '"';
+      if (filename) head += '; filename="' + filename + '"\r\nContent-Type: ' + (ctype || 'application/octet-stream');
+      head += '\r\n\r\n';
+      return [Buffer.from(head, 'utf8'), Buffer.isBuffer(val) ? val : Buffer.from(String(val), 'utf8'), Buffer.from('\r\n', 'utf8')];
+    }
+    var parts = [].concat(mp('name', '測試')).concat(mp('consentTicket', 'x')).concat(mp('image', imgBuf, 'face.jpg', 'image/jpeg'));
+    parts.push(Buffer.from('--' + boundary + '--\r\n', 'utf8'));
+    return { boundary: boundary, body: Buffer.concat(parts) };
+  })();
+  // real mode still off here before QC block mutates — force flags briefly
+  var cfgG = require(path.join(root, 'server/config'));
+  var prevG = { f: cfgG.config.realModeFlag, l: cfgG.config.legalConfirmed, e: cfgG.config.realModeEnabled };
+  cfgG.config.realModeFlag = true; cfgG.config.legalConfirmed = true; cfgG.config.realModeEnabled = true;
+  var noGroupRes = await new Promise(function (resolve, reject) {
+    var r = http.request({
+      hostname: '127.0.0.1', port: port, path: '/api/register', method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=' + noGroupBody.boundary, 'Content-Length': noGroupBody.body.length }
+    }, function (res) {
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () {
+        var text = Buffer.concat(chunks).toString('utf8');
+        var json = null; try { json = JSON.parse(text); } catch (_) {}
+        resolve({ status: res.statusCode, json: json });
+      });
+    });
+    r.on('error', reject); r.write(noGroupBody.body); r.end();
+  });
+  ok('register without group rejected', noGroupRes.status === 400 && noGroupRes.json && noGroupRes.json.code === 'GROUP_REQUIRED');
+  cfgG.config.realModeFlag = prevG.f; cfgG.config.legalConfirmed = prevG.l; cfgG.config.realModeEnabled = prevG.e;
+
+  // GET /api/groups without credentials configured still may fail — with test env credentials it will try upstream
+  // Mock via central.listGroups
+  var centralG = require(path.join(root, 'server/central/client'));
+  var prevList = centralG.listGroups;
+  var prevSign = centralG.signIn;
+  centralG.signIn = async function () { return 'fake-token-for-tests-only-not-real'; };
+  centralG.listGroups = async function () { return [{ id: '1', name: 'Default' }, { id: '2', name: 'Team' }]; };
+  var groupsRes = await req('GET', '/api/groups');
+  ok('GET /api/groups ok', groupsRes.status === 200 && groupsRes.json.ok === true && groupsRes.json.groups.length === 2);
+  ok('GET /api/groups no token leaked', !/fake-token/.test(groupsRes.text));
+  centralG.listGroups = prevList;
+  centralG.signIn = prevSign;
+
+  // --- QC fail reasons on /api/register (v2026-11-09i) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -792,6 +891,7 @@ async function httpIntegration() {
     .concat(mp('name', '測試人員'))
     .concat(mp('employeeId', 'E001'))
     .concat(mp('consentTicket', issuedQc.ticket))
+    .concat(mp('groupName', 'TestGroup'))
     .concat(mp('image', imgBuf, 'face.jpg', 'image/jpeg'));
   regParts.push(Buffer.from('--' + boundary + '--\r\n', 'utf8'));
   var regBody = Buffer.concat(regParts);
@@ -835,7 +935,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09h) ---
+  // --- skip TLS verify API (v2026-11-09i) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -998,7 +1098,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09h');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09i');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09h';
+  var APP_VERSION = 'v2026-11-09i';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -550,7 +550,27 @@
     fetchSettings();
   }
 
+
+  function initSettingsCollapse() {
+    var details = document.getElementById('settings-details');
+    if (!details) return;
+    try {
+      var saved = localStorage.getItem(SETTINGS_OPEN_KEY);
+      if (saved === '1') details.open = true;
+      else if (saved === '0') details.open = false;
+      else details.open = false; // default collapsed
+    } catch (e) {
+      details.open = false;
+    }
+    details.addEventListener('toggle', function () {
+      try {
+        localStorage.setItem(SETTINGS_OPEN_KEY, details.open ? '1' : '0');
+      } catch (e) {}
+    });
+  }
+
   function initApiBasePanel() {
+    initSettingsCollapse();
     var input = document.getElementById('api-base-input');
     var saveBtn = document.getElementById('api-base-save');
     var clearBtn = document.getElementById('api-base-clear');
@@ -751,7 +771,86 @@
     var formError = document.getElementById('form-error');
     var backBtn = document.getElementById('back-to-notice');
     var submitBtn = document.getElementById('register-submit');
+    var groupInput = document.getElementById('group-name');
+    var groupList = document.getElementById('group-list');
+    var groupError = document.getElementById('group-error');
+    var groupStatus = document.getElementById('group-status');
+    var knownGroups = [];
     var currentObjectUrl = null;
+
+    function setGroupError(msg) {
+      if (groupError) groupError.textContent = msg || '';
+      if (groupInput) {
+        if (msg) groupInput.setAttribute('aria-invalid', 'true');
+        else groupInput.removeAttribute('aria-invalid');
+      }
+    }
+
+    function loadGroups() {
+      if (!groupInput || !isRealMode()) {
+        if (groupStatus) {
+          groupStatus.textContent = isRealMode()
+            ? ''
+            : '預覽模式：群組僅本機驗證必填，不會向 Central 查詢。';
+        }
+        return;
+      }
+      var base = getApiBase();
+      if (!base || typeof fetch !== 'function') {
+        if (groupStatus) {
+          groupStatus.textContent = '無法載入群組清單，請自行輸入群組名稱。';
+        }
+        return;
+      }
+      if (groupStatus) groupStatus.textContent = '載入 Central 群組中…';
+      fetch(base + '/api/groups', { method: 'GET', credentials: 'same-origin' })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { res: res, data: data };
+          });
+        })
+        .then(function (pack) {
+          if (!pack.res.ok) {
+            knownGroups = [];
+            if (groupStatus) {
+              groupStatus.textContent =
+                '無法載入群組（' +
+                ((pack.data && pack.data.error) || pack.res.status) +
+                '）。請自行輸入；若為新名稱，真實模式會嘗試建立。';
+              groupStatus.className = 'api-status error';
+            }
+            return;
+          }
+          knownGroups = (pack.data && pack.data.groups) || [];
+          if (groupList) {
+            groupList.innerHTML = '';
+            for (var i = 0; i < knownGroups.length; i++) {
+              var opt = document.createElement('option');
+              opt.value = knownGroups[i].name || knownGroups[i].id || '';
+              groupList.appendChild(opt);
+            }
+          }
+          if (groupStatus) {
+            groupStatus.className = 'api-status';
+            groupStatus.textContent =
+              '已載入 ' +
+              knownGroups.length +
+              ' 個群組' +
+              (pack.data && pack.data.guessed ? '（端點為猜測，可於 .env 調整）' : '') +
+              '。也可自行輸入新名稱。';
+          }
+        })
+        .catch(function (e) {
+          knownGroups = [];
+          if (groupStatus) {
+            groupStatus.className = 'api-status error';
+            groupStatus.textContent =
+              '無法載入群組：' + ((e && e.message) || e) + '。請自行輸入名稱。';
+          }
+        });
+    }
+
+    loadGroups();
 
     function setPhotoError(msg) {
       if (photoError) photoError.textContent = msg || '';
@@ -775,6 +874,51 @@
       resultBox.textContent = text;
       resultBox.className = 'result visible' + (ok ? '' : ' result-error');
       resultBox.focus();
+    }
+
+    function showImportSuccess(data) {
+      if (!resultBox) return;
+      var personId = data && data.personId;
+      var group = (data && data.group) || {};
+      var detailUrl = data && data.detailUrl;
+      var html = '';
+      html += '<div class="qc-fail-title">已成功匯入 Central</div>';
+      html += '<ul class="qc-reason-list">';
+      html += '<li><strong>personId：</strong> ' + escapeHtml(String(personId || '')) + '</li>';
+      html +=
+        '<li><strong>群組：</strong> ' +
+        escapeHtml(String(group.name || '')) +
+        (group.created ? '（新建）' : '') +
+        '</li>';
+      if (detailUrl) {
+        html +=
+          '<li><strong>Central 人員頁：</strong> <a href="' +
+          escapeHtml(detailUrl) +
+          '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(detailUrl) +
+          '</a></li>';
+      } else {
+        html += '<li>請到 Central 人員列表以 personId 搜尋確認。</li>';
+      }
+      html += '</ul>';
+      html +=
+        '<p class="qc-fail-note">若列表暫時看不到，可能在其他群組篩選或待審檢視；請用上方連結直接開啟。</p>';
+      if (data && data.techDetails) {
+        var tech = '';
+        try {
+          tech = JSON.stringify(data.techDetails, null, 2);
+        } catch (e) {
+          tech = String(data.techDetails);
+        }
+        html +=
+          '<details class="qc-tech"><summary>技術細節（已遮罩）</summary><pre>' +
+          escapeHtml(tech) +
+          '</pre></details>';
+      }
+      resultBox.innerHTML = html;
+      resultBox.className = 'result visible';
+      resultBox.focus();
+      if (formError) formError.textContent = '';
     }
 
     function showQcFailure(data) {
@@ -925,6 +1069,14 @@
         }
         setNameError('');
 
+        var groupVal = ((groupInput && groupInput.value) || '').trim();
+        if (!groupVal) {
+          setGroupError('請選擇或輸入群組名稱。');
+          if (groupInput) groupInput.focus();
+          return;
+        }
+        setGroupError('');
+
         var file = photoInput && photoInput.files && photoInput.files[0];
         if (isRealMode() && !file) {
           setPhotoError('真實模式請上傳人臉照片。');
@@ -957,6 +1109,7 @@
         var mid = ((memberInput && memberInput.value) || '').trim();
         if (mid) fd.append('employeeId', mid);
         fd.append('consentTicket', ssGet(TICKET_KEY) || '');
+        fd.append('groupName', groupVal);
         fd.append('image', file, file.name || 'face.jpg');
 
         if (submitBtn) {
@@ -990,6 +1143,9 @@
                 code === 'IMPORT_FAILED' ||
                 code === 'IMPORT_SHAPE_UNKNOWN' ||
                 code === 'IMPORT_PERSON_ID_MISSING' ||
+                code === 'IMPORT_EXISTS_SIMILAR' ||
+                code === 'GROUP_REQUIRED' ||
+                code === 'GROUP_CREATE_FAILED' ||
                 (pack.data && Array.isArray(pack.data.reasons) && pack.data.reasons.length)
               ) {
                 showStructuredFailure(pack.data || {}, code && String(code).indexOf('IMPORT') === 0 ? 'import' : 'qc');
@@ -1004,7 +1160,7 @@
               throw new Error('後端未回傳 personId（不會改走 Mock）');
             }
             clearAllConsent();
-            showResult('已成功匯入 Central。personId：' + pack.data.personId + (pack.data.message ? '（' + pack.data.message + '）' : ''), true);
+            showImportSuccess(pack.data);
           })
           .catch(function (e) {
             setFormError(e.message || '無法連線後端（不會改走 Mock 假成功）');
@@ -1045,6 +1201,7 @@
     initApiBasePanel: initApiBasePanel,
     updateModeBanner: updateModeBanner,
     updateAppFooter: updateAppFooter,
+    initSettingsCollapse: initSettingsCollapse,
     applyLocalOneClickDefaults: applyLocalOneClickDefaults,
     isLocalLoopbackPage: isLocalLoopbackPage,
     runConnectionTest: runConnectionTest,

@@ -55,8 +55,24 @@ Masked tech details go to `runtime/qc.log` / `upstream.log`.
 
 
 ## POST `/api/website/person/import`
-- Request: multipart `name`, `snapshot`, optional `employeeId`
+- Request: multipart `name`, `snapshot`, optional `employeeId`, **plus group field (GUESSED)**
+- Group field default: `groupId` (also sends `groupIds` / `groupName` aliases). Override with `FACEME_IMPORT_GROUP_FIELD`.
 - Assumed success: `{ "personId": "P-FAKE-001" }` or `{ "data": { "personId": "..." } }`
+- Observed failure: HTTP **406** with message like `Exists similar person` and detail URL `https://<host>/user-detail?id=<id>`
+
+## Groups (GUESSED — not live-verified; override via .env)
+
+FaceMe Security Central website API paths are not published like FaceOS device WebRest.
+We keep an adapter layer with defaults aligned to `/api/website/*` naming:
+
+| Action | Default (GUESSED) | Env override |
+| --- | --- | --- |
+| List groups | `GET /api/website/group` | `FACEME_GROUP_LIST_PATH` |
+| Create group | `POST /api/website/group` JSON `{ "name": "..." }` | `FACEME_GROUP_CREATE_PATH` |
+| Import group field | multipart `groupId` | `FACEME_IMPORT_GROUP_FIELD` |
+
+Related FaceOS device docs use `groupId` on person create — polarity of field name is plausible but **paths differ**. Confirm on intranet swagger (`/swagger-ui/doc.html`) before production.
+
 
 
 ## QC failure reason extraction (v2026-11-09h)
