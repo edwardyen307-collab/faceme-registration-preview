@@ -59,7 +59,7 @@ Masked tech details go to `runtime/qc.log` / `upstream.log`.
 - Assumed success: `{ "personId": "P-FAKE-001" }` or `{ "data": { "personId": "..." } }`
 
 
-## QC failure reason extraction (v2026-11-09g)
+## QC failure reason extraction (v2026-11-09h)
 
 Central's exact JSON field names are **not live-verified** here (intranet swagger only).
 Public FaceMe materials mention QC for occlusion / blur / lighting / angle / size / grayscale.
