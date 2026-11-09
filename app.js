@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09j';
+  var APP_VERSION = 'v2026-11-09k';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -966,7 +966,15 @@
           })
           .then(function (pack) {
             if (groupProbeResult) {
-              groupProbeResult.textContent = JSON.stringify(pack.data, null, 2);
+              var encLine =
+                '實際 body 編碼：' +
+                ((pack.data && (pack.data.bodyEncoding || pack.data.encodingRemembered)) ||
+                  '未知') +
+                (pack.data && pack.data.contentType
+                  ? '（' + pack.data.contentType + '）'
+                  : '');
+              groupProbeResult.textContent =
+                encLine + '\n\n' + JSON.stringify(pack.data, null, 2);
             }
             if (pack.res.ok && pack.data && Array.isArray(pack.data.groups)) {
               knownGroups = pack.data.groups;

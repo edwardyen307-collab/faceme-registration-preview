@@ -36,7 +36,7 @@ These fixtures are **fake data** for adapters/tests. Adjust after intranet verif
 - Legacy fixture shapes (`pass` / `success` / `result`) still accepted for older tests
 - **HTTP 200 with unknown body = QC fail (fail closed)** — never treat status alone as pass
 
-### QC failure reason extraction (v2026-11-09j)
+### QC failure reason extraction (v2026-11-09k)
 
 When `condition` is present, **only `false` flags** become Traditional Chinese reasons:
 
@@ -70,13 +70,15 @@ Masked tech details go to `runtime/qc.log` / `upstream.log`.
 | Create group | `POST /api/website/group/create` | required `{ name, color, patternId }` — **do not send type** |
 | Import group field | multipart `groupId` (int64) | only official field; resolve create id from response or re-list by name |
 
-Env overrides still exist (`FACEME_GROUP_LIST_PATH`, `FACEME_GROUP_CREATE_PATH`, `FACEME_IMPORT_GROUP_FIELD`) but defaults match swagger.
+Env overrides: `FACEME_GROUP_LIST_PATH`, `FACEME_GROUP_CREATE_PATH`, `FACEME_IMPORT_GROUP_FIELD`, **`FACEME_GROUP_BODY_ENCODING=multipart|form|json`**.
+Body encoding default auto-try: **multipart → form (urlencoded) → json**; only HTTP 415 advances. Successful encoding remembered for the process.
+signIn uses `application/x-www-form-urlencoded`; snapshot/qc and person/import use `multipart/form-data`.
 
 **Invisible people after “success”**: previously wrong/missing group multipart field (aliases or no group) likely put people outside the expected Central group filter. Fix = send only numeric `groupId`.
 
 
 
-## QC failure reason extraction (v2026-11-09j)
+## QC failure reason extraction (v2026-11-09k)
 
 Central's exact JSON field names are **not live-verified** here (intranet swagger only).
 Public FaceMe materials mention QC for occlusion / blur / lighting / angle / size / grayscale.

@@ -293,10 +293,20 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
           {
             id: 'group_create_failed',
             text: err.message,
-            hint: '請先在 Central 手動建立同名群組，或確認顏色／圖示編號（create 需 name+color+patternId）'
+            hint: '請先在 Central 手動建立同名群組，或確認顏色／圖示編號（create 需 name+color+patternId）。若見 HTTP 415，薄後端會自動改試 multipart／form／json。'
           }
         ];
         err.techDetails = createErr && createErr.techDetails ? createErr.techDetails : null;
+        if (createErr && createErr.encodingAttempts) {
+          err.encodingAttempts = createErr.encodingAttempts;
+          if (err.techDetails && typeof err.techDetails === 'object') {
+            err.techDetails = Object.assign({}, err.techDetails, {
+              encodingAttempts: createErr.encodingAttempts
+            });
+          } else if (!err.techDetails) {
+            err.techDetails = { encodingAttempts: createErr.encodingAttempts };
+          }
+        }
         throw err;
       }
     }

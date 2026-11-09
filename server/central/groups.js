@@ -10,6 +10,10 @@
  * List body (confirmed): pageIndex, pageSize, orderBy, optional type.
  * Create body (confirmed required): name, color, patternId — no type.
  * Import person field (confirmed): groupId (int64) only.
+ *
+ * Body encoding (v2026-11-09k): live Central returns HTTP 415 for JSON on
+ * group/list + group/create. Default try order: multipart → form → json.
+ * Only 415 triggers the next encoding. Override: FACEME_GROUP_BODY_ENCODING.
  */
 
 const { maskQcPayload, appendQcLog } = require('./qc-explain');
@@ -311,6 +315,128 @@ function displayGroupLabel(g) {
   return type ? name + '（' + type + '）' : name;
 }
 
+/** Preferred encodings for group list/create (live Central: JSON → 415). */
+const GROUP_BODY_ENCODINGS = ['multipart', 'form', 'json'];
+
+/** Process-lifetime remembered encoding that first succeeded (shared list+create). */
+let rememberedGroupBodyEncoding = null;
+
+function normalizeGroupBodyEncoding(raw) {
+  const s = String(raw == null ? '' : raw)
+    .trim()
+    .toLowerCase();
+  if (s === 'multipart' || s === 'multipart/form-data') return 'multipart';
+  if (s === 'form' || s === 'urlencoded' || s === 'application/x-www-form-urlencoded') return 'form';
+  if (s === 'json' || s === 'application/json') return 'json';
+  return null;
+}
+
+function envGroupBodyEncoding() {
+  return normalizeGroupBodyEncoding(process.env.FACEME_GROUP_BODY_ENCODING);
+}
+
+function getRememberedGroupBodyEncoding() {
+  return rememberedGroupBodyEncoding;
+}
+
+function resetGroupBodyEncodingMemory() {
+  rememberedGroupBodyEncoding = null;
+}
+
+function rememberGroupBodyEncoding(encoding, meta) {
+  const enc = normalizeGroupBodyEncoding(encoding);
+  if (!enc) return;
+  const changed = rememberedGroupBodyEncoding !== enc;
+  rememberedGroupBodyEncoding = enc;
+  if (changed) {
+    const where = (meta && meta.path) || 'group';
+    const line =
+      'group body encoding locked=' +
+      enc +
+      ' path=' +
+      where +
+      (meta && meta.status != null ? ' status=' + meta.status : '');
+    try {
+      // Lazy require to avoid cycles; log to upstream.log + console
+      require('../upstream-errors').appendUpstreamLog(line);
+    } catch (_) {
+      try {
+        console.warn('[upstream] ' + line);
+      } catch (_) {}
+    }
+  }
+}
+
+/**
+ * Encoding try order for this process.
+ * Env override → only that encoding.
+ * Else remembered first, then remaining defaults (multipart → form → json).
+ */
+function groupBodyEncodingOrder() {
+  const forced = envGroupBodyEncoding();
+  if (forced) return [forced];
+  const order = GROUP_BODY_ENCODINGS.slice();
+  const remembered = rememberedGroupBodyEncoding;
+  if (remembered && order.indexOf(remembered) !== -1) {
+    return [remembered].concat(order.filter((e) => e !== remembered));
+  }
+  return order;
+}
+
+function fieldsToStringMap(fields) {
+  const out = {};
+  const src = fields && typeof fields === 'object' ? fields : {};
+  for (const k of Object.keys(src)) {
+    const v = src[k];
+    if (v == null) continue;
+    out[k] = typeof v === 'string' ? v : String(v);
+  }
+  return out;
+}
+
+/**
+ * Build fetch body + headers for a group API call.
+ * multipart: undici FormData (do NOT set Content-Type — boundary is automatic)
+ * form: application/x-www-form-urlencoded (same family as signIn)
+ * json: application/json
+ */
+function buildGroupBody(fields, encoding) {
+  const enc = normalizeGroupBodyEncoding(encoding) || 'multipart';
+  const map = fieldsToStringMap(fields);
+  if (enc === 'multipart') {
+    const { FormData } = require('undici');
+    const fd = new FormData();
+    for (const k of Object.keys(map)) fd.append(k, map[k]);
+    return {
+      encoding: 'multipart',
+      contentType: 'multipart/form-data',
+      headers: {}, // let undici set multipart boundary
+      body: fd
+    };
+  }
+  if (enc === 'form') {
+    const params = new URLSearchParams();
+    for (const k of Object.keys(map)) params.set(k, map[k]);
+    return {
+      encoding: 'form',
+      contentType: 'application/x-www-form-urlencoded',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    };
+  }
+  return {
+    encoding: 'json',
+    contentType: 'application/json',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields && typeof fields === 'object' ? fields : {})
+  };
+}
+
+function createGroupRequestBody(name, color, patternId) {
+  return { name: name, color: color, patternId: patternId };
+}
+
+
 module.exports = {
   DEFAULT_LIST_PATH,
   DEFAULT_LIST_METHOD,
@@ -322,11 +448,13 @@ module.exports = {
   RESERVED_GROUP_NAMES,
   GROUP_COLORS,
   GROUP_TYPES,
+  GROUP_BODY_ENCODINGS,
   groupListPath,
   groupListMethod,
   groupCreatePath,
   importGroupField,
   listRequestBody,
+  createGroupRequestBody,
   parseGroupList,
   parseGroupListPage,
   parseCreatedGroup,
@@ -337,5 +465,12 @@ module.exports = {
   asObject,
   pickId,
   pickName,
-  pickType
+  pickType,
+  normalizeGroupBodyEncoding,
+  envGroupBodyEncoding,
+  getRememberedGroupBodyEncoding,
+  resetGroupBodyEncodingMemory,
+  rememberGroupBodyEncoding,
+  groupBodyEncodingOrder,
+  buildGroupBody
 };

@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09j', /v2026-11-09j/.test(text));
+  ok('start.bat version banner 09k', /v2026-11-09k/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09j in pages', /v2026-11-09j/.test(indexHtml) && /v2026-11-09j/.test(registerHtml));
+ok('version v2026-11-09k in pages', /v2026-11-09k/.test(indexHtml) && /v2026-11-09k/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -91,6 +91,7 @@ ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-
 ok('group field in register page', /group-name/.test(registerHtml) && /group-list/.test(registerHtml));
 ok('group probe + create extras in register', /btn-probe-groups/.test(registerHtml) && /group-create-extras/.test(registerHtml) && /group-color/.test(registerHtml));
 ok('app sends groupColor for new groups', /groupColor/.test(js) && /groupPatternId/.test(js) && /groups\/probe/.test(js));
+ok('groups module documents body encoding env', /FACEME_GROUP_BODY_ENCODING/.test(fs.readFileSync(path.join(root, '.env.example'), 'utf8')) || /FACEME_GROUP_BODY_ENCODING/.test(fs.readFileSync(path.join(root, 'server/central/groups.js'), 'utf8')));
 ok('settings collapsible details', /settings-details/.test(indexHtml) && /settings-details/.test(registerHtml));
 ok('groups module exists', fs.existsSync(path.join(root, 'server/central/groups.js')));
 ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js));
@@ -364,6 +365,22 @@ function adapterTests() {
   }
   ok('import field default groupId', groupsMod.importGroupField() === 'groupId');
   ok('list body has pageIndex', groupsMod.listRequestBody(0).pageIndex === 0 && groupsMod.listRequestBody(0).orderBy === 'name:asc');
+  groupsMod.resetGroupBodyEncodingMemory();
+  delete process.env.FACEME_GROUP_BODY_ENCODING;
+  ok('default encoding order multipart first', groupsMod.groupBodyEncodingOrder()[0] === 'multipart');
+  ok('default encoding order has form then json', groupsMod.groupBodyEncodingOrder().join(',') === 'multipart,form,json');
+  var builtMp = groupsMod.buildGroupBody({ pageIndex: 0, pageSize: 100, orderBy: 'name:asc' }, 'multipart');
+  ok('build multipart has FormData body', builtMp.encoding === 'multipart' && builtMp.body && typeof builtMp.body.append === 'function');
+  var builtForm = groupsMod.buildGroupBody({ name: '員工', color: '#0070C0', patternId: 1 }, 'form');
+  ok('build form urlencoded', builtForm.encoding === 'form' && /name=/.test(builtForm.body) && /patternId=1/.test(builtForm.body));
+  var builtJson = groupsMod.buildGroupBody({ name: 'A' }, 'json');
+  ok('build json', builtJson.encoding === 'json' && builtJson.headers['Content-Type'] === 'application/json');
+  groupsMod.rememberGroupBodyEncoding('form');
+  ok('remembered form floats first', groupsMod.groupBodyEncodingOrder()[0] === 'form' && groupsMod.getRememberedGroupBodyEncoding() === 'form');
+  process.env.FACEME_GROUP_BODY_ENCODING = 'json';
+  ok('env forces json only', groupsMod.groupBodyEncodingOrder().join(',') === 'json');
+  delete process.env.FACEME_GROUP_BODY_ENCODING;
+  groupsMod.resetGroupBodyEncodingMemory();
 
   // validate group required
   var validate = require(path.join(root, 'server/validate'));
@@ -524,20 +541,40 @@ async function httpIntegration() {
         res.end(JSON.stringify({ personId: 'P-FAKE-001' }));
         return;
       }
-      if (req.url === '/api/website/group/list') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          data: {
-            list: [
-              { id: 1, name: 'Default', type: 'NORMAL' },
-              { id: 2, name: 'Employees', type: 'EMPLOYEE' }
-            ],
-            totalPages: 1
-          }
-        }));
-        return;
-      }
-      if (req.url === '/api/website/group/create') {
+      if (req.url === '/api/website/group/list' || req.url === '/api/website/group/create') {
+        var ct = String(req.headers['content-type'] || '').toLowerCase();
+        // Live Central: JSON → HTTP 415. Accept multipart / urlencoded form fields.
+        if (ct.indexOf('application/json') !== -1) {
+          res.writeHead(415, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            statusCode: 415,
+            statusDescription: 'Unsupported Media Type',
+            errorMessage: 'HTTP 415 Unsupported Media Type'
+          }));
+          return;
+        }
+        if (ct.indexOf('multipart/form-data') === -1 && ct.indexOf('application/x-www-form-urlencoded') === -1) {
+          res.writeHead(415, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            statusCode: 415,
+            statusDescription: 'Unsupported Media Type',
+            errorMessage: 'HTTP 415 Unsupported Media Type'
+          }));
+          return;
+        }
+        if (req.url === '/api/website/group/list') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            data: {
+              list: [
+                { id: 1, name: 'Default', type: 'NORMAL' },
+                { id: 2, name: 'Employees', type: 'EMPLOYEE' }
+              ],
+              totalPages: 1
+            }
+          }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 99, name: 'NewFromTest' }));
         return;
@@ -556,7 +593,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09j', config.appVersion === 'v2026-11-09j');
+  ok('appVersion 09k', config.appVersion === 'v2026-11-09k');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -606,7 +643,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09j', health.status === 200 && health.json.appVersion === 'v2026-11-09j');
+  ok('health version 09k', health.status === 200 && health.json.appVersion === 'v2026-11-09k');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -891,7 +928,59 @@ async function httpIntegration() {
   centralG.listGroups = prevList;
   centralG.signIn = prevSign;
 
-  // --- QC fail reasons on /api/register (v2026-11-09j) ---
+  // --- group body encoding: JSON 415 → multipart success (v2026-11-09k) ---
+  var groupsEnc = require(path.join(root, 'server/central/groups'));
+  var centralEnc = require(path.join(root, 'server/central/client'));
+  var cfgEnc = require(path.join(root, 'server/config'));
+  var prevBaseEnc = cfgEnc.config.facemeBaseUrl;
+  // Point client back at the in-process mock upstream (earlier PUT tests may have changed base)
+  cfgEnc.config.facemeBaseUrl = 'http://127.0.0.1:' + upPort;
+  if (typeof centralEnc.resetUpstreamAgent === 'function') centralEnc.resetUpstreamAgent();
+  groupsEnc.resetGroupBodyEncodingMemory();
+  delete process.env.FACEME_GROUP_BODY_ENCODING;
+  // Force try-order to start with json so mock's JSON→415 path is exercised
+  groupsEnc.rememberGroupBodyEncoding('json');
+  centralEnc.signIn = async function () { return 'fake-token-for-tests-only-not-real'; };
+  // Use real listGroupsRaw against the Content-Type-aware mock upstream
+  var listPack = await centralEnc.listGroupsRaw('fake-token-for-tests-only-not-real');
+  ok('list recovers from JSON 415 via multipart', Array.isArray(listPack.groups) && listPack.groups.length === 2);
+  ok('list locked multipart encoding', listPack.bodyEncoding === 'multipart' || groupsEnc.getRememberedGroupBodyEncoding() === 'multipart');
+  ok(
+    'list encoding attempts include json 415',
+    Array.isArray(listPack.attempted) &&
+      listPack.attempted[0] &&
+      Array.isArray(listPack.attempted[0].encodingAttempts) &&
+      listPack.attempted[0].encodingAttempts.some(function (a) {
+        return a.encoding === 'json' && a.status === 415;
+      }) &&
+      listPack.attempted[0].encodingAttempts.some(function (a) {
+        return a.encoding === 'multipart' && a.status === 200;
+      })
+  );
+  // create should reuse remembered multipart (no json attempt first)
+  groupsEnc.rememberGroupBodyEncoding('multipart');
+  var createdEnc = await centralEnc.createGroup('fake-token-for-tests-only-not-real', 'NewFromTest', '#0070C0', 1);
+  ok('create with multipart encoding', createdEnc && String(createdEnc.id) === '99');
+  ok('create reports multipart', createdEnc.bodyEncoding === 'multipart');
+  // env force json → 415 fail closed (no retry beyond forced)
+  process.env.FACEME_GROUP_BODY_ENCODING = 'json';
+  groupsEnc.resetGroupBodyEncodingMemory();
+  var forcedFail = false;
+  try {
+    await centralEnc.listGroupsRaw('fake-token-for-tests-only-not-real');
+  } catch (fe) {
+    forcedFail = true;
+    ok('forced json fails on 415', fe.status === 502 || fe.code === 'GROUP_LIST_HTTP' || /415/.test(String(fe.message)));
+  }
+  ok('forced json encoding fails closed', forcedFail);
+  delete process.env.FACEME_GROUP_BODY_ENCODING;
+  groupsEnc.resetGroupBodyEncodingMemory();
+  cfgEnc.config.facemeBaseUrl = prevBaseEnc;
+  if (typeof centralEnc.resetUpstreamAgent === 'function') centralEnc.resetUpstreamAgent();
+  // restore signIn if we overwrote (prevSign already restored above; re-stub only if needed later)
+  centralEnc.signIn = prevSign;
+
+  // --- QC fail reasons on /api/register (v2026-11-09k) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -989,7 +1078,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09j) ---
+  // --- skip TLS verify API (v2026-11-09k) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -1152,7 +1241,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09j');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09k');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

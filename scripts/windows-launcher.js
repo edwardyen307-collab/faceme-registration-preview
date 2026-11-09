@@ -13,7 +13,7 @@ const http = require('http');
 const { spawn, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const APP_VERSION = 'v2026-11-09j';
+const APP_VERSION = 'v2026-11-09k';
 const MIN_NODE_MAJOR = 18;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8443;

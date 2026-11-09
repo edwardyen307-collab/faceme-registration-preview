@@ -13,12 +13,18 @@ const {
   groupCreatePath,
   importGroupField,
   listRequestBody,
+  createGroupRequestBody,
   parseGroupList,
   parseGroupListPage,
   parseCreatedGroup,
   validateGroupCreateFields,
   findGroupByName,
-  MAX_LIST_PAGES
+  MAX_LIST_PAGES,
+  buildGroupBody,
+  groupBodyEncodingOrder,
+  rememberGroupBodyEncoding,
+  getRememberedGroupBodyEncoding,
+  resetGroupBodyEncodingMemory
 } = require('./groups');
 const { maskQcPayload } = require('./qc-explain');
 const {
@@ -143,18 +149,49 @@ async function snapshotQc(token, imageBuffer, filename, mime) {
   return parseQcResult(result.status, result.body);
 }
 
+async function postGroupWithEncoding(token, path, fields) {
+  const order = groupBodyEncodingOrder();
+  const attempts = [];
+  let lastResult = null;
+  for (const enc of order) {
+    const built = buildGroupBody(fields, enc);
+    const headers = Object.assign({ Authorization: token }, built.headers);
+    const result = await upstream(path, {
+      method: 'POST',
+      headers: headers,
+      body: built.body
+    });
+    attempts.push({
+      encoding: built.encoding,
+      contentType: built.contentType,
+      status: result.status
+    });
+    lastResult = result;
+    if (result.status === 415) {
+      // Unsupported Media Type — try next encoding only
+      continue;
+    }
+    // Any non-415 outcome stops (success or other error)
+    rememberGroupBodyEncoding(built.encoding, { path: path, status: result.status });
+    return {
+      result: result,
+      encoding: built.encoding,
+      contentType: built.contentType,
+      attempts: attempts
+    };
+  }
+  // All encodings returned 415 (or order empty)
+  return {
+    result: lastResult || { status: 415, body: { errorMessage: 'HTTP 415 Unsupported Media Type' } },
+    encoding: null,
+    contentType: null,
+    attempts: attempts
+  };
+}
+
 async function listGroupsRaw(token) {
   const path = groupListPath();
   const method = groupListMethod();
-  const headers = { Authorization: token };
-  if (method !== 'GET') headers['Content-Type'] = 'application/json';
-
-  async function call(bodyObj) {
-    const opts = { method: method, headers: headers };
-    if (method !== 'GET') opts.body = JSON.stringify(bodyObj == null ? {} : bodyObj);
-    return upstream(path, opts);
-  }
-
   const pageSize = 100;
   const all = [];
   const seen = new Set();
@@ -162,15 +199,58 @@ async function listGroupsRaw(token) {
   let lastResult = null;
   let lastMasked = null;
   let pagesFetched = 0;
+  let bodyEncoding = getRememberedGroupBodyEncoding();
+  let contentType = null;
+
+  if (method === 'GET') {
+    // Rare override: GET list without body
+    const result = await upstream(path, {
+      method: 'GET',
+      headers: { Authorization: token }
+    });
+    const page = parseGroupListPage(result.status, result.body, pageSize);
+    return {
+      groups: page.groups,
+      result: result,
+      attempted: [{ method: 'GET', status: result.status }],
+      path: path,
+      method: method,
+      pagesFetched: 1,
+      bodyEncoding: null,
+      contentType: null,
+      techDetails: page.techDetails
+    };
+  }
 
   for (let pageIndex = 0; pageIndex < MAX_LIST_PAGES; pageIndex++) {
     const body = listRequestBody(pageIndex);
-    const result = await call(body);
-    attempted.push({ body: body, status: result.status });
-    lastResult = result;
+    const pack = await postGroupWithEncoding(token, path, body);
+    attempted.push({
+      body: body,
+      encodingAttempts: pack.attempts,
+      encoding: pack.encoding,
+      status: pack.result && pack.result.status
+    });
+    lastResult = pack.result;
     pagesFetched++;
+    bodyEncoding = pack.encoding || bodyEncoding;
+    contentType = pack.contentType || contentType;
 
-    const page = parseGroupListPage(result.status, result.body, pageSize);
+    let page;
+    try {
+      page = parseGroupListPage(pack.result.status, pack.result.body, pageSize);
+    } catch (parseErr) {
+      parseErr.attempts = pack.attempts;
+      parseErr.bodyEncoding = pack.encoding;
+      if (pack.attempts && pack.attempts.length) {
+        parseErr.message =
+          (parseErr.message || '群組列表失敗') +
+          '（嘗試編碼：' +
+          pack.attempts.map((a) => a.encoding + '=' + a.status).join(', ') +
+          '）';
+      }
+      throw parseErr;
+    }
     lastMasked = page.techDetails;
     for (const g of page.groups) {
       const key = String(g.id || g.name).toLowerCase();
@@ -193,6 +273,8 @@ async function listGroupsRaw(token) {
     path: path,
     method: method,
     pagesFetched: pagesFetched,
+    bodyEncoding: bodyEncoding,
+    contentType: contentType,
     techDetails: lastMasked
   };
 }
@@ -205,18 +287,24 @@ async function listGroups(token) {
 async function probeGroups(token) {
   try {
     const pack = await listGroupsRaw(token);
+    const enc = pack.bodyEncoding || getRememberedGroupBodyEncoding();
     return {
       ok: true,
       path: pack.path,
       method: pack.method,
       httpStatus: pack.result && pack.result.status,
       pagesFetched: pack.pagesFetched,
+      bodyEncoding: enc,
+      contentType: pack.contentType || null,
+      encodingRemembered: getRememberedGroupBodyEncoding(),
       attempted: pack.attempted,
       groups: pack.groups,
       parseError: null,
       techDetails: pack.techDetails,
       note:
-        '只讀探測（POST /api/website/group/list，分頁最多 20 頁）。權杖未回傳。系統內建群組不可刪改。'
+        '只讀探測（POST /api/website/group/list，分頁最多 20 頁）。實際 body 編碼=' +
+        (enc || '未知') +
+        '。權杖未回傳。系統內建群組不可刪改。'
     };
   } catch (e) {
     return {
@@ -224,9 +312,11 @@ async function probeGroups(token) {
       path: groupListPath(),
       method: groupListMethod(),
       httpStatus: e.status || null,
+      bodyEncoding: getRememberedGroupBodyEncoding(),
       groups: null,
       parseError: { code: e.code || 'GROUP_LIST_FAILED', message: e.message || String(e) },
       techDetails: e.techDetails || null,
+      attempted: e.attempts || null,
       note: '讀取群組失敗（fail closed）。請把技術細節貼給管理員。'
     };
   }
@@ -236,19 +326,27 @@ async function createGroup(token, name, color, patternId) {
   const fields = validateGroupCreateFields(name, color, patternId);
   const path = groupCreatePath();
   // Confirmed required: name, color, patternId — do NOT send type
-  const result = await upstream(path, {
-    method: 'POST',
-    headers: {
-      Authorization: token,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: fields.name,
-      color: fields.color,
-      patternId: fields.patternId
-    })
-  });
-  const created = parseCreatedGroup(result.status, result.body, fields.name);
+  // Live Central: JSON → 415; try multipart → form → json (only on 415)
+  const pack = await postGroupWithEncoding(
+    token,
+    path,
+    createGroupRequestBody(fields.name, fields.color, fields.patternId)
+  );
+  let created;
+  try {
+    created = parseCreatedGroup(pack.result.status, pack.result.body, fields.name);
+  } catch (createErr) {
+    createErr.encodingAttempts = pack.attempts;
+    createErr.bodyEncoding = pack.encoding;
+    if (pack.attempts && pack.attempts.length) {
+      createErr.message =
+        (createErr.message || '建立群組失敗') +
+        '（嘗試編碼：' +
+        pack.attempts.map((a) => a.encoding + '=' + a.status).join(', ') +
+        '）';
+    }
+    throw createErr;
+  }
   if (!created.id) {
     // Re-list and resolve by name (fail-closed if still missing)
     const groups = await listGroups(token);
@@ -260,6 +358,7 @@ async function createGroup(token, name, color, patternId) {
       err.code = 'GROUP_CREATE_ID_MISSING';
       err.status = 502;
       err.techDetails = created.techDetails || null;
+      err.encodingAttempts = pack.attempts;
       throw err;
     }
     return {
@@ -267,14 +366,16 @@ async function createGroup(token, name, color, patternId) {
       name: found.name || fields.name,
       type: found.type || null,
       techDetails: created.techDetails,
-      resolvedViaList: true
+      resolvedViaList: true,
+      bodyEncoding: pack.encoding || getRememberedGroupBodyEncoding()
     };
   }
   return {
     id: String(created.id),
     name: created.name || fields.name,
     techDetails: created.techDetails,
-    resolvedViaList: false
+    resolvedViaList: false,
+    bodyEncoding: pack.encoding || getRememberedGroupBodyEncoding()
   };
 }
 
@@ -536,6 +637,9 @@ module.exports = {
   probeGroups,
   createGroup,
   personImport,
+  postGroupWithEncoding,
+  resetGroupBodyEncodingMemory,
+  getRememberedGroupBodyEncoding,
   upstream,
   connectionProbe,
   resetAgentForTests,

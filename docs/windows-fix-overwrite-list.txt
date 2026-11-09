@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09j
+FaceMe update pack v2026-11-09k
 ===============================
 DO NOT overwrite: .env
 
@@ -17,5 +17,6 @@ REQUIRED:
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
 After replace: close old node, start.bat, hard-refresh.
-New (09j): import only official groupId; create needs color+patternId; no tags/skipQC/forceImport;
-no move-after-import; probe groups button; group list paginated POST /list.
+New (09k): group list/create body encoding multipart→form→json (only on HTTP 415);
+remember successful encoding in-process; FACEME_GROUP_BODY_ENCODING override;
+probe UI shows which encoding was used. signIn stays urlencoded; QC/import multipart.
