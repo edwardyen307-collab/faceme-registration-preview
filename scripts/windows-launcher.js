@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Windows / local one-click launcher (invoked by start.bat).
+ * Local one-click launcher (invoked by start.bat).
  * - No ExecutionPolicy Bypass
- * - Does not read or transmit .env passwords to any remote tool
- * - Does not call live Central except via the started local server APIs the user triggers
+ * - Does not read/transmit .env passwords to remote tools
+ * - Writes minimal diagnostics to runtime/launcher.log (no secrets)
  */
 
 const fs = require('fs');
@@ -13,19 +13,62 @@ const http = require('http');
 const { spawn, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const APP_VERSION = 'v2026-11-06c';
+const APP_VERSION = 'v2026-11-09a';
 const MIN_NODE_MAJOR = 18;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8443;
 const LOCAL_URL_PATH = '/?local=1';
+const LOG_PATH = path.join(ROOT, 'runtime', 'launcher.log');
+
+let serverChild = null;
+
+function ensureRuntimeDir() {
+  fs.mkdirSync(path.join(ROOT, 'runtime'), { recursive: true });
+}
+
+function diag(line) {
+  try {
+    ensureRuntimeDir();
+    const stamp = new Date().toISOString();
+    fs.appendFileSync(LOG_PATH, stamp + ' ' + String(line).replace(/\r?\n/g, ' ') + '\n', 'utf8');
+  } catch (_) {
+    /* ignore log failures */
+  }
+}
 
 function log(msg) {
   console.log(msg);
+  diag('INFO ' + msg);
 }
 
 function fail(msg, code) {
-  console.error('\n[錯誤] ' + msg);
+  console.error('\n[ERROR] ' + msg);
+  diag('ERROR ' + msg + ' code=' + (code || 1));
+  cleanupChild('fail');
   process.exit(code || 1);
+}
+
+function cleanupChild(reason) {
+  if (!serverChild || serverChild.killed) return;
+  diag('cleanupChild reason=' + reason + ' pid=' + serverChild.pid);
+  try {
+    if (process.platform === 'win32') {
+      try {
+        execFileSync(
+          'taskkill',
+          ['/PID', String(serverChild.pid), '/T', '/F'],
+          { stdio: 'ignore' }
+        );
+      } catch (_) {
+        try {
+          serverChild.kill();
+        } catch (_) {}
+      }
+    } else {
+      serverChild.kill('SIGTERM');
+    }
+  } catch (_) {}
+  serverChild = null;
 }
 
 function nodeMajor() {
@@ -55,44 +98,77 @@ function readEnvFile(filePath) {
   return out;
 }
 
+/** Never log secret values — only whether keys exist. */
+function envPresenceSummary(env) {
+  return {
+    hasAccount: Boolean(env.FACEME_ACCOUNT),
+    hasPassword: Boolean(env.FACEME_PASSWORD),
+    baseHost: (() => {
+      try {
+        return env.FACEME_BASE_URL ? new URL(env.FACEME_BASE_URL).host : '';
+      } catch (_) {
+        return '(invalid-url)';
+      }
+    })(),
+    host: env.HOST || DEFAULT_HOST,
+    port: env.PORT || String(DEFAULT_PORT),
+    realMode: env.FACEME_REAL_MODE || '0',
+    legal: env.FACEME_STATEMENT_LEGAL_CONFIRMED || '0'
+  };
+}
+
+function assertProjectLayout() {
+  const need = ['package.json', 'package-lock.json', 'server/index.js', 'index.html', 'app.js'];
+  const missing = need.filter((rel) => !fs.existsSync(path.join(ROOT, rel)));
+  if (missing.length) {
+    fail(
+      'Project files missing: ' +
+        missing.join(', ') +
+        '. Unzip the FULL archive (not a single file). Path: ' +
+        ROOT,
+      10
+    );
+  }
+}
+
 function ensureEnv() {
   const envPath = path.join(ROOT, '.env');
   const examplePath = path.join(ROOT, '.env.example');
   if (fs.existsSync(envPath)) {
-    log('已存在 .env → 不會覆蓋。');
+    log('.env exists -> will NOT overwrite.');
+    diag('env exists presence=' + JSON.stringify(envPresenceSummary(readEnvFile(envPath))));
     return { created: false, envPath };
   }
   if (!fs.existsSync(examplePath)) {
-    fail('缺少 .env.example，無法建立 .env');
+    fail('Missing .env.example; cannot create .env', 11);
   }
   fs.copyFileSync(examplePath, envPath);
-  log('已由 .env.example 建立新的 .env（預設 FACEME_BASE_URL=https://127.0.0.1）。');
-  log('請在記事本填寫 FACEME_ACCOUNT / FACEME_PASSWORD（本機檔案，勿分享）。');
-  log('注意：.env 含密碼風險；請鎖定電腦，勿提交 git / 雲端同步公開資料夾。');
+  log('Created .env from .env.example (default FACEME_BASE_URL=https://127.0.0.1).');
+  log('Fill FACEME_ACCOUNT / FACEME_PASSWORD in Notepad. Do not share this file.');
+  diag('env created (no secret values logged)');
 
-  // Best-effort ACL tighten on Windows only
   if (process.platform === 'win32') {
     try {
-      const user = process.env.USERNAME || process.env.USER || '';
+      const user = process.env.USERNAME || '';
       if (user) {
         execFileSync(
           'icacls',
           [envPath, '/inheritance:r', '/grant:r', user + ':(R,W)'],
           { stdio: 'ignore' }
         );
-        log('已嘗試將 .env ACL 限為目前使用者讀寫（icacls）。');
+        log('Attempted to restrict .env ACL to current user.');
       }
     } catch (_) {
-      log('（提示）無法自動收緊 .env ACL，請手動確認檔案權限。');
+      log('(hint) Could not tighten .env ACL automatically.');
     }
     try {
       spawn('notepad.exe', [envPath], { detached: true, stdio: 'ignore' }).unref();
-      log('已開啟記事本編輯 .env。填好後可關閉記事本；服務仍會繼續啟動。');
+      log('Opened Notepad for .env. You can edit while startup continues.');
     } catch (_) {
-      log('無法自動開啟記事本，請手動編輯：' + envPath);
+      log('Open .env manually: ' + envPath);
     }
   } else {
-    log('非 Windows：請手動編輯 ' + envPath);
+    log('Non-Windows: edit ' + envPath + ' manually.');
   }
   return { created: true, envPath };
 }
@@ -117,22 +193,36 @@ function needNpmCi() {
 }
 
 function runNpmCi() {
-  log('正在安裝依賴（npm ci）…');
+  log('Installing dependencies (npm ci)...');
+  diag('npm ci start platform=' + process.platform);
+  // On Windows, npm is npm.cmd — spawn with shell so .cmd works (same idea as "call npm.cmd" in bat).
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const r = spawn(npmCmd, ['ci', '--omit=dev'], {
+  const args = ['ci', '--omit=dev'];
+  const r = spawn(npmCmd, args, {
     cwd: ROOT,
     stdio: 'inherit',
-    shell: process.platform === 'win32'
+    shell: process.platform === 'win32',
+    windowsHide: true
   });
   return new Promise((resolve, reject) => {
-    r.on('error', (e) => reject(e));
+    r.on('error', (e) => {
+      reject(
+        new Error(
+          'Failed to start npm (' +
+            npmCmd +
+            '): ' +
+            (e && e.message) +
+            '. Is Node.js installed correctly?'
+        )
+      );
+    });
     r.on('exit', (code) => {
       if (code !== 0) {
         reject(
           new Error(
-            'npm ci 失敗（代碼 ' +
+            'npm ci failed (exit ' +
               code +
-              '）。請確認網路／公司代理，或刪除 node_modules 後再雙擊 start.bat。完整訊息見上方。'
+              '). Check network/proxy. Delete node_modules and retry start.bat. Full npm output is above.'
           )
         );
         return;
@@ -144,6 +234,7 @@ function runNpmCi() {
           'utf8'
         );
       } catch (_) {}
+      diag('npm ci ok');
       resolve();
     });
   });
@@ -172,9 +263,13 @@ function httpGetJson(url, timeoutMs) {
 }
 
 function openBrowser(url) {
-  log('開啟瀏覽器：' + url);
+  log('Opening browser: ' + url);
   if (process.platform === 'win32') {
-    spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+    spawn('cmd', ['/c', 'start', '', url], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    }).unref();
   } else if (process.platform === 'darwin') {
     spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
   } else {
@@ -190,9 +285,9 @@ async function probeOurServer(host, port) {
     return { state: 'ours', health: res.json };
   }
   if (res.status) {
-    return { state: 'foreign', detail: 'HTTP ' + res.status + '（非本版 health）' };
+    return { state: 'foreign', detail: 'HTTP ' + res.status + ' (not this appVersion)' };
   }
-  return { state: 'foreign', detail: '無法辨識的回應' };
+  return { state: 'foreign', detail: 'unrecognized response' };
 }
 
 function startServerProcess() {
@@ -200,7 +295,13 @@ function startServerProcess() {
     cwd: ROOT,
     stdio: 'inherit',
     env: process.env,
-    detached: false
+    detached: false,
+    windowsHide: true
+  });
+  serverChild = child;
+  child.on('exit', (code, signal) => {
+    diag('server exit code=' + code + ' signal=' + signal);
+    serverChild = null;
   });
   return child;
 }
@@ -208,32 +309,37 @@ function startServerProcess() {
 async function waitForHealth(host, port, attempts) {
   for (let i = 0; i < attempts; i++) {
     const p = await probeOurServer(host, port);
-    if (p.state === 'ours') return p;
-    if (p.state === 'foreign') return p;
+    if (p.state === 'ours' || p.state === 'foreign') return p;
     await new Promise((r) => setTimeout(r, 400));
   }
   return { state: 'down' };
 }
 
 async function main() {
-  log('工作目錄：' + ROOT);
+  ensureRuntimeDir();
+  diag('---- launcher start version=' + APP_VERSION + ' node=' + process.versions.node + ' platform=' + process.platform);
+  log('Working directory: ' + ROOT);
+  log('App version: ' + APP_VERSION);
+
   if (nodeMajor() < MIN_NODE_MAJOR) {
     fail(
-      'Node.js 版本過舊（目前 ' +
+      'Node.js too old (now ' +
         process.versions.node +
-        '）。請安裝官方 LTS（建議 ≥ ' +
+        '). Install LTS >= ' +
         MIN_NODE_MAJOR +
-        '）: https://nodejs.org/',
+        ' from https://nodejs.org/',
       2
     );
   }
-  log('Node ' + process.versions.node + ' OK');
 
+  assertProjectLayout();
   ensureEnv();
+
   const env = readEnvFile(path.join(ROOT, '.env'));
   const host = env.HOST || DEFAULT_HOST;
   const port = Number.parseInt(env.PORT || String(DEFAULT_PORT), 10) || DEFAULT_PORT;
   const pageUrl = 'http://' + host + ':' + port + LOCAL_URL_PATH;
+  diag('listen target host=' + host + ' port=' + port);
 
   if (needNpmCi()) {
     try {
@@ -242,28 +348,28 @@ async function main() {
       fail(e.message || String(e), 3);
     }
   } else {
-    log('依賴已就緒，略過 npm ci。');
+    log('Dependencies OK; skip npm ci.');
   }
 
   const existing = await probeOurServer(host, port);
   if (existing.state === 'ours') {
-    log('偵測到本版服務已在執行（' + APP_VERSION + '）。不會重複啟動。');
+    log('Service already running (' + APP_VERSION + '). Not starting a second copy.');
     openBrowser(pageUrl);
-    log('本機網址：' + pageUrl + ' （HTTP，非 HTTPS）');
+    log('Local URL (HTTP): ' + pageUrl);
     return;
   }
   if (existing.state === 'foreign') {
     fail(
-      '連接埠 ' +
+      'Port ' +
         port +
-        ' 已被其他程式占用（' +
+        ' is used by another program (' +
         (existing.detail || '') +
-        '）。請關閉占用程式或改 .env 的 PORT 後重試。不會開啟瀏覽器以免誤判成功。',
+        '). Close it or change PORT in .env. Browser was NOT opened.',
       4
     );
   }
 
-  log('啟動薄後端…');
+  log('Starting thin backend...');
   const child = startServerProcess();
   let childExited = null;
   child.on('exit', (code, signal) => {
@@ -273,33 +379,41 @@ async function main() {
   const ready = await waitForHealth(host, port, 40);
   if (childExited) {
     fail(
-      'Node 服務已結束（code=' +
+      'Node server exited early (code=' +
         childExited.code +
         ' signal=' +
         childExited.signal +
-        '）。請向上捲動查看錯誤。',
+        '). Scroll up for the stack/error.',
       5
     );
   }
   if (ready.state !== 'ours') {
-    try {
-      child.kill();
-    } catch (_) {}
+    cleanupChild('health-not-ours');
     if (ready.state === 'foreign') {
-      fail(
-        '啟動後連接埠回應不是本版 health。可能被其他服務搶佔。未開啟瀏覽器。',
-        4
-      );
+      fail('After start, port response is not this app health. Browser NOT opened.', 4);
     }
-    fail('等待 /api/health 逾時（預期 appVersion=' + APP_VERSION + '）。未開啟瀏覽器。', 5);
+    fail(
+      'Timed out waiting for /api/health (expected appVersion=' +
+        APP_VERSION +
+        '). Browser NOT opened.',
+      5
+    );
   }
 
-  log('health OK：appVersion=' + ready.health.appVersion);
+  log('health OK: appVersion=' + ready.health.appVersion);
   openBrowser(pageUrl);
-  log('本機網址：' + pageUrl + ' （HTTP，非 HTTPS）');
-  log('此視窗會保持開啟以顯示服務日誌；關閉視窗可能結束服務。');
+  log('Local URL (HTTP): ' + pageUrl);
+  log('Keep this window open to see server logs. Closing it may stop the service.');
 
-  // Keep launcher attached to server stdio
+  process.on('SIGINT', () => {
+    cleanupChild('SIGINT');
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    cleanupChild('SIGTERM');
+    process.exit(0);
+  });
+
   await new Promise((resolve) => {
     child.on('exit', resolve);
   });
@@ -313,7 +427,10 @@ module.exports = {
   readEnvFile,
   probeOurServer,
   nodeMajor,
-  ROOT
+  assertProjectLayout,
+  envPresenceSummary,
+  ROOT,
+  LOG_PATH
 };
 
 if (require.main === module) {

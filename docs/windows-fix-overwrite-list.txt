@@ -1,0 +1,23 @@
+FaceMe fix pack v2026-11-09a
+============================
+DO NOT overwrite: .env  (keep your passwords)
+DO NOT need to delete: node_modules (optional; launcher may npm ci)
+
+Overwrite / replace these files inside your existing unzipped project folder
+(the folder that already contains package.json and your .env):
+
+1) start.bat                         (REQUIRED - fixes flash-close)
+2) scripts/windows-launcher.js       (REQUIRED - logging, cleanup, version)
+3) setup-and-start.ps1               (optional)
+4) README.md                         (optional; from full repo ZIP if desired)
+
+Also recommended when updating the whole app from repo ZIP (same folder merge):
+- app.js, index.html, register.html, styles.css
+- server/** (config appVersion etc.)
+- package.json, package-lock.json
+- .env.example (does not overwrite .env)
+- tests/** (optional)
+
+After replace: close old black windows, double-click start.bat.
+Local URL: http://127.0.0.1:8443/?local=1
+Logs: runtime\bat-boot.log , runtime\launcher.log (no passwords)

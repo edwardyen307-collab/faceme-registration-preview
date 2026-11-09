@@ -33,12 +33,46 @@ var startBat = read('start.bat');
 var launcher = read('scripts/windows-launcher.js');
 var ps1 = read('setup-and-start.ps1');
 
-ok('version v2026-11-06c in pages', /v2026-11-06c/.test(indexHtml) && /v2026-11-06c/.test(registerHtml));
-ok('statement draft c', /v2026-11-06c-draft/.test(js) && /v2026-11-06c-draft/.test(indexHtml));
+(function batRegressions() {
+  var buf = fs.readFileSync(path.join(root, 'start.bat'));
+  var text = buf.toString('utf8');
+  var crlf = 0;
+  for (var i = 0; i < buf.length - 1; i++) if (buf[i] === 13 && buf[i + 1] === 10) crlf++;
+  var lfOnly = false;
+  for (var j = 0; j < buf.length; j++) {
+    if (buf[j] === 10 && (j === 0 || buf[j - 1] !== 13)) { lfOnly = true; break; }
+  }
+  ok('start.bat uses CRLF', crlf > 10);
+  ok('start.bat has no bare LF', lfOnly === false);
+  ok('start.bat no UTF-8 BOM', !(buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf));
+  ok('start.bat ASCII-only bytes', Array.prototype.every.call(buf, function (b) { return b < 128; }));
+  ok('start.bat has HOLD and pause', /:HOLD/.test(text) && /pause/i.test(text));
+  // Labels inside parenthesized IF blocks break cmd.exe; HOLD is outside.
+  var badLabelInIf = false;
+  var lines = text.split(/\r?\n/);
+  var depth = 0;
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    var opens = (line.match(/\(/g) || []).length;
+    var closes = (line.match(/\)/g) || []).length;
+    if (depth > 0 && /^\s*:/.test(line)) badLabelInIf = true;
+    depth += opens - closes;
+    if (depth < 0) depth = 0;
+  }
+  ok('start.bat no labels inside if blocks', badLabelInIf === false);
+
+  ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
+  ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
+  ok('start.bat version banner 09a', /v2026-11-09a/.test(text));
+  ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
+})();
+
+
+ok('version v2026-11-09a in pages', /v2026-11-09a/.test(indexHtml) && /v2026-11-09a/.test(registerHtml));
+ok('statement draft 09a', /v2026-11-09a-draft/.test(js) && /v2026-11-09a-draft/.test(indexHtml));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
 ok('env example legal confirm off', /^FACEME_STATEMENT_LEGAL_CONFIRMED=0$/m.test(envExample));
-ok('start.bat exists and calls node launcher', /windows-launcher\.js/.test(startBat) && /nodejs\.org/.test(startBat));
 ok('start.bat no ExecutionPolicy Bypass', !/ExecutionPolicy\s+Bypass/i.test(startBat));
 ok('ps1 invokes launcher and does not invoke Bypass flag', /windows-launcher\.js/.test(ps1) && !/powershell[^\n]*-ExecutionPolicy\s+Bypass/i.test(ps1+startBat) && /Does NOT use -ExecutionPolicy Bypass/i.test(ps1));
 ok('launcher never sets NODE_TLS_REJECT_UNAUTHORIZED', !/NODE_TLS_REJECT_UNAUTHORIZED/.test(launcher));
@@ -125,7 +159,7 @@ async function frontendAsyncChecks() {
 async function httpIntegration() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
-  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-06c-draft';
+  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09a-draft';
   process.env.FACEME_REAL_MODE = '0';
   process.env.FACEME_STATEMENT_LEGAL_CONFIRMED = '0';
   process.env.FACEME_ACCOUNT = 'test-account';
@@ -178,7 +212,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion c', config.appVersion === 'v2026-11-06c');
+  ok('appVersion 09a', config.appVersion === 'v2026-11-09a');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -228,7 +262,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version c', health.status === 200 && health.json.appVersion === 'v2026-11-06c');
+  ok('health version 09a', health.status === 200 && health.json.appVersion === 'v2026-11-09a');
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
 
   var beforeLogin = loginHits;
@@ -256,7 +290,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-06c');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09a');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

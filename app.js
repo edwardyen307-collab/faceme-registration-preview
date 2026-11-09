@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-06c';
-  var STATEMENT_VERSION = 'v2026-11-06c-draft';
+  var APP_VERSION = 'v2026-11-09a';
+  var STATEMENT_VERSION = 'v2026-11-09a-draft';
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
   var TICKET_EXP_KEY = 'faceme_consent_expires';

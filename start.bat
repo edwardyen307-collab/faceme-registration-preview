@@ -1,50 +1,73 @@
 @echo off
 setlocal EnableExtensions
-chcp 65001 >nul
-cd /d "%~dp0"
+set "ERR=0"
+cd /d "%~dp0" || (
+  echo [ERROR] Cannot open script folder. Unzip the ZIP fully first.
+  set "ERR=1"
+  goto HOLD
+)
+
+if not exist "runtime" mkdir "runtime" 2>nul
+echo %DATE% %TIME% boot dir=%CD%>> "runtime\bat-boot.log"
 
 echo.
 echo ========================================
-echo  FaceMe 本機一鍵啟動  v2026-11-06c
+echo  FaceMe local start  v2026-11-09a
 echo ========================================
+echo  Folder: %CD%
 echo.
-echo  資料夾: %CD%
-echo.
+
+if not exist "%~dp0package.json" (
+  echo [ERROR] package.json missing. You must unzip the full project folder.
+  echo         Do not run start.bat from inside a partial extract.
+  set "ERR=1"
+  goto HOLD
+)
+
+if not exist "%~dp0scripts\windows-launcher.js" (
+  echo [ERROR] scripts\windows-launcher.js missing. Unzip the full project.
+  set "ERR=1"
+  goto HOLD
+)
 
 where node >nul 2>&1
 if errorlevel 1 (
-  echo [錯誤] 找不到 Node.js。此工具不是「完全免安裝」：需要先安裝 Node.js LTS。
-  echo.
-  echo 請安裝官方 LTS 後，再雙擊本 start.bat。
-  echo 下載頁: https://nodejs.org/
-  echo.
-  choice /C YN /M "是否現在開啟 Node.js 官方下載頁"
-  if errorlevel 2 goto :FAIL_NODE
-  if errorlevel 1 start "" "https://nodejs.org/"
-  :FAIL_NODE
-  echo.
-  echo 視窗將暫停，方便閱讀訊息。
-  pause
-  exit /b 1
+  echo [ERROR] Node.js not found. Install official LTS from:
+  echo         https://nodejs.org/
+  echo         This app is NOT install-free. No silent install will run.
+  start "" "https://nodejs.org/"
+  set "ERR=1"
+  goto HOLD
 )
 
-echo 使用 Node:
+echo Node:
 node -v
 echo.
 
-REM Prefer Node launcher (no PowerShell ExecutionPolicy / no Bypass).
+node -e "var m=+String(process.versions.node||'0').split('.')[0]; if(!(m>=18)){console.error('[ERROR] Node too old: need >= 18'); process.exit(2)}"
+if errorlevel 1 (
+  echo [ERROR] Node.js too old. Please install current LTS ^>= 18.
+  start "" "https://nodejs.org/"
+  set "ERR=1"
+  goto HOLD
+)
+
+echo Starting launcher...
 node "%~dp0scripts\windows-launcher.js"
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
   echo.
-  echo [結束] 啟動失敗，代碼 %ERR%。上方訊息請保留以便排查。
-  pause
-  exit /b %ERR%
+  echo [ERROR] Launcher failed, code %ERR%.
+  echo         Read messages above and runtime\launcher.log if present.
 )
 
+:HOLD
 echo.
-echo 若瀏覽器未自動開啟，請手動前往: http://127.0.0.1:8443/?local=1
-echo 關閉此視窗不會立刻停止已在背景執行的服務；請到工作管理員結束 node.exe，或關閉啟動該服務的視窗。
-pause
-endlocal
-exit /b 0
+if not "%ERR%"=="0" (
+  echo Window stays open so you can read the error. Log: runtime\bat-boot.log
+) else (
+  echo Done. Local URL: http://127.0.0.1:8443/?local=1
+)
+echo Press any key to close this window.
+pause >nul
+endlocal & exit /b %ERR%

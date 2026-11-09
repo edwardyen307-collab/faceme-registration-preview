@@ -1,8 +1,20 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-06c**
+版本：**v2026-11-09a**
+
+## 若「雙擊 start.bat 視窗閃一下就關掉」
+
+1. **先關掉**所有舊的黑色命令視窗／舊版 node 服務。  
+2. 下載本版修復檔（見下方），用新的 `start.bat` **覆蓋**專案根目錄同名檔（**不要刪、不要覆蓋你的 `.env`**）。若提示還缺檔，再解壓修復 ZIP 內列出的檔案到同一資料夾。  
+3. 再雙擊新的 `start.bat`。視窗應會停住並顯示英文錯誤或啟動過程；詳細中文／日誌在 Node 輸出與 `runtime\launcher.log`、`runtime\bat-boot.log`（不含密碼）。
+
+**已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
+
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09a.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
+
+
 
 1. **安裝 Node.js LTS**（若已安裝可略過）→ [https://nodejs.org/](https://nodejs.org/)  
    這**不是**完全免安裝軟體：一定要有 Node／npm。本工具**不會**靜默安裝 Node，也**不會**繞過公司執行原則。
@@ -64,7 +76,7 @@ npm start          # http://127.0.0.1:8443/
 npm test
 ```
 
-修改聲明：`index.html` 的 `#notice-text`；版本字串須與 `FACEME_STATEMENT_VERSION`／前端 `STATEMENT_VERSION` 一致（目前 `v2026-11-06c-draft`）。
+修改聲明：`index.html` 的 `#notice-text`；版本字串須與 `FACEME_STATEMENT_VERSION`／前端 `STATEMENT_VERSION` 一致（目前 `v2026-11-09a-draft`）。
 
 ## 安全提醒
 
