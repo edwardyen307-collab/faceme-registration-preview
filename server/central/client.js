@@ -13,6 +13,7 @@ const {
   explainTlsFailure,
   hostIsIp
 } = require('../tls-options');
+const { makeUpstreamError, diagnoseUpstreamFailure, sanitizeUrlForDisplay } = require('../upstream-errors');
 
 let agent = null;
 
@@ -85,26 +86,16 @@ async function upstream(pathname, options) {
     return { status: res.status, body, contentType: ct };
   } catch (e) {
     if (e.name === 'AbortError') {
-      const err = new Error('上游逾時');
+      const err = new Error(
+        '上游逾時。嘗試連線：' +
+          sanitizeUrlForDisplay(url) +
+          '（原始代碼：TIMEOUT）'
+      );
       err.code = 'UPSTREAM_TIMEOUT';
       err.status = 504;
       throw err;
     }
-    let hostHint = '';
-    try {
-      hostHint = new URL(config.facemeBaseUrl).hostname;
-    } catch (_) {}
-    const plain = explainTlsFailure(e, hostHint || 'Central');
-    const isTls =
-      e &&
-      (e.code === 'ERR_INVALID_ARG_VALUE' ||
-        String(e.code || '').includes('CERT') ||
-        String(e.code || '').includes('TLS') ||
-        /certificate|SSL|TLS|servername/i.test(String(e.message || '')));
-    const err = new Error(isTls ? plain : '無法連線上游：' + (e && e.message ? e.message : String(e)));
-    err.code = isTls ? e.code || 'TLS_ERROR' : 'UPSTREAM_UNREACHABLE';
-    err.status = 502;
-    throw err;
+    throw makeUpstreamError(e, url, 502);
   } finally {
     clearTimeout(timer);
   }
@@ -347,10 +338,14 @@ async function connectionProbe(options) {
         'signIn 成功（token 不記錄、不回傳）。未執行 QC／person import。realMode 閘門未改變。'
     });
   } catch (e) {
+    const diag = diagnoseUpstreamFailure(
+      e,
+      config.facemeBaseUrl + '/api/website/account/signIn'
+    );
     steps.push({
       name: 'login',
       ok: false,
-      detail: '登入測試失敗：' + (e.code || e.message || 'error')
+      detail: '登入測試失敗：' + (e && e.message && !/fetch failed/i.test(e.message) ? e.message + ' — ' : '') + diag.message
     });
   }
 
@@ -372,5 +367,7 @@ module.exports = {
   resetUpstreamAgent,
   getAgent,
   buildTlsSocketOptions,
-  hostIsIp
+  hostIsIp,
+  diagnoseUpstreamFailure,
+  makeUpstreamError
 };

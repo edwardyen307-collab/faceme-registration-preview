@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09d', /v2026-11-09d/.test(text));
+  ok('start.bat version banner 09e', /v2026-11-09e/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09d in pages', /v2026-11-09d/.test(indexHtml) && /v2026-11-09d/.test(registerHtml));
+ok('version v2026-11-09e in pages', /v2026-11-09e/.test(indexHtml) && /v2026-11-09e/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -119,6 +119,34 @@ function loadFront(htmlFile, url, beforeEval) {
   ok('local=1 is backend mode not empty mock', page.window.FaceMePreview.isRealMode() === true);
   page.dom.window.close();
 })();
+
+function upstreamErrorTests() {
+  var ue = require(path.join(root, 'server/upstream-errors'));
+  function wrap(code, msg) {
+    var cause = Object.assign(new Error(msg || code), { code: code });
+    return Object.assign(new TypeError('fetch failed'), { cause: cause });
+  }
+  var refused = ue.diagnoseUpstreamFailure(wrap('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:443'), 'https://user:secret@127.0.0.1/api/website/account/signIn');
+  ok('ECONNREFUSED plain advice', refused.code === 'ECONNREFUSED' && /連接埠/.test(refused.message));
+  ok('ECONNREFUSED hides credentials', !/secret|user:/.test(refused.message) && !/secret/.test(refused.safeUrl));
+  ok('ECONNREFUSED shows url', /https:\/\/127\.0\.0\.1/.test(refused.safeUrl));
+  var dns = ue.diagnoseUpstreamFailure(wrap('ENOTFOUND', 'getaddrinfo ENOTFOUND'), 'https://no-such-host.invalid');
+  ok('ENOTFOUND diagnosis', dns.code === 'ENOTFOUND' && /DNS|主機/.test(dns.message));
+  var to = ue.diagnoseUpstreamFailure(wrap('UND_ERR_CONNECT_TIMEOUT', 'Connect Timeout Error'), 'https://127.0.0.1');
+  ok('connect timeout diagnosis', to.code === 'TIMEOUT' && /逾時/.test(to.message));
+  var cert = ue.diagnoseUpstreamFailure(wrap('DEPTH_ZERO_SELF_SIGNED_CERT', 'self signed certificate'), 'https://127.0.0.1');
+  ok('self-signed cert diagnosis', /SELF_SIGNED|DEPTH_ZERO|憑證/.test(cert.code + cert.message));
+  var proto = ue.diagnoseUpstreamFailure(wrap('EPROTO', 'wrong version number'), 'https://127.0.0.1:80');
+  ok('EPROTO http/https mismatch advice', proto.code === 'EPROTO' && /http|https/i.test(proto.message));
+  var aggCause = Object.assign(new Error('many'), {
+    errors: [Object.assign(new Error('a'), { code: 'ECONNREFUSED' })]
+  });
+  var agg = Object.assign(new TypeError('fetch failed'), { cause: aggCause });
+  var aggDiag = ue.diagnoseUpstreamFailure(agg, 'https://127.0.0.1');
+  ok('AggregateError cause unwrapped', aggDiag.codes.indexOf('ECONNREFUSED') !== -1);
+  var made = ue.makeUpstreamError(wrap('ECONNREFUSED', 'x'), 'https://127.0.0.1/path', 502);
+  ok('makeUpstreamError shape', made.status === 502 && made.code === 'ECONNREFUSED' && /連接埠/.test(made.message));
+}
 
 function statementVersionTests() {
   var sv = require(path.join(root, 'server/statement-version'));
@@ -258,7 +286,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09d', config.appVersion === 'v2026-11-09d');
+  ok('appVersion 09e', config.appVersion === 'v2026-11-09e');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -308,7 +336,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09d', health.status === 200 && health.json.appVersion === 'v2026-11-09d');
+  ok('health version 09e', health.status === 200 && health.json.appVersion === 'v2026-11-09e');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -535,7 +563,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09d');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09e');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);
@@ -559,6 +587,7 @@ async function httpIntegration() {
 
 (async function main() {
   try {
+    upstreamErrorTests();
     statementVersionTests();
     tlsOptionTests();
     adapterTests();

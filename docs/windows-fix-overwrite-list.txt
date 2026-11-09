@@ -1,17 +1,17 @@
-FaceMe update pack v2026-11-09d
+FaceMe update pack v2026-11-09e
 ===============================
 DO NOT overwrite: .env
-Optional: delete or comment FACEME_STATEMENT_VERSION=... in your .env if present (stale values are ignored but remove to avoid confusion)
 
-REQUIRED replace:
+REQUIRED:
 - start.bat
 - scripts/windows-launcher.js
 - app.js
 - index.html
 - register.html
 - styles.css
-- statement-version.json          (new single source for privacy notice version)
-- server/statement-version.js     (new)
+- statement-version.json
+- server/statement-version.js
+- server/upstream-errors.js      (new — fetch failed diagnostics)
 - server/config.js
 - server/consent.js
 - server/index.js
@@ -24,11 +24,7 @@ REQUIRED replace:
 - package.json
 - package-lock.json
 
-OPTIONAL:
-- setup-and-start.ps1
-- README.md
-- .env.example
-- tests/**
-- docs/**
+OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
-After replace: close old windows, start.bat, hard-refresh browser (Ctrl+F5).
+After replace: close old windows, start.bat, hard-refresh.
+If still failing: read the new plain-language error (ECONNREFUSED often means wrong port).

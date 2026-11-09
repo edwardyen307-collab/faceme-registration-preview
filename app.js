@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09d';
+  var APP_VERSION = 'v2026-11-09e';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
