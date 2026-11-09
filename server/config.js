@@ -58,7 +58,7 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-09g',
+  appVersion: 'v2026-11-09h',
   envDiagnostics
 };
 

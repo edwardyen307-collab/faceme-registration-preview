@@ -3,10 +3,10 @@
 /**
  * Extract human-readable QC failure reasons from Central responses.
  *
- * Field names are NOT live-verified against FaceMe Security Central swagger.
- * Matching is intentionally loose (case-insensitive key aliases + nested walk).
- * Public FaceMe docs only confirm QC covers occlusion / blur / lighting /
- * angle / size / grayscale — exact JSON keys remain assumed.
+ * Canonical condition format observed 2026-11-09 from live Central:
+ *   quality_result + condition.{face_size,angle,occlusion,color,single_face,mask}
+ *   In condition, true = that check PASSED, false = FAILED.
+ * Numeric / alias heuristics run ONLY when no condition object is present.
  */
 
 const fs = require('fs');
@@ -204,26 +204,117 @@ function pushReason(list, id, text, hint) {
 }
 
 /**
- * Build Traditional Chinese reasons + hints from a QC JSON object.
+ * Map observed Central condition flags (true=pass, false=fail) → ZH reasons.
  */
-function explainQcFailure(obj) {
+function explainConditionFlags(condition) {
+  const reasons = [];
+  if (!condition || typeof condition !== 'object') return reasons;
+  const map = {
+    face_size: {
+      id: 'face_size',
+      text: '臉部大小不合格（太小或太大）',
+      hint: '請調整與鏡頭的距離，讓整張臉清楚入鏡、不要過近或過遠'
+    },
+    angle: {
+      id: 'angle',
+      text: '臉部角度不正',
+      hint: '請正面直視鏡頭，不要左右轉頭或過度抬頭／低頭'
+    },
+    occlusion: {
+      id: 'occlusion',
+      text: '臉部有遮擋',
+      hint: '請拿開遮住臉的物品（手、帽子、瀏海等），讓整張臉清楚'
+    },
+    color: {
+      id: 'color',
+      text: '顏色或光線異常',
+      hint: '請到光線均勻處拍攝，避免過暗、過曝或嚴重偏色'
+    },
+    single_face: {
+      id: 'single_face',
+      text: '偵測到不只一張臉（或未正確偵測單人）',
+      hint: '請只拍一人，避免背景出現其他人臉'
+    },
+    mask: {
+      id: 'mask',
+      text: '偵測到口罩',
+      hint: '註冊請暫時拿開口罩，露出完整臉部'
+    }
+  };
+  for (const [key, meta] of Object.entries(map)) {
+    if (!Object.prototype.hasOwnProperty.call(condition, key)) continue;
+    const v = condition[key];
+    // true = pass → skip; false = fail → report; non-boolean → treat as unreadable item
+    if (v === true) continue;
+    if (v === false) {
+      pushReason(reasons, meta.id, meta.text, meta.hint);
+      continue;
+    }
+    pushReason(
+      reasons,
+      meta.id + '_unreadable',
+      '無法判讀條件「' + key + '」（值不是 true/false）',
+      '請重拍一張；若持續發生請保留技術細節給管理員'
+    );
+  }
+  return reasons;
+}
+
+/**
+ * Build Traditional Chinese reasons + hints from a QC JSON object.
+ * Prefer observed condition flags; numeric heuristics only without condition.
+ */
+function explainQcFailure(obj, parseMeta) {
   const reasons = [];
   if (!obj || typeof obj !== 'object') {
     return {
       reasons: [
         {
           id: 'unparsed',
-          text: '無法解析 Central 的品質檢查回應',
+          text: '無法判讀 Central 的品質檢查回應',
           hint: '請換一張清楚的正面照片後再試；若持續失敗請保留技術細節給管理員'
         }
       ]
     };
   }
 
+  if (parseMeta && parseMeta.reason === 'quality_result_unreadable') {
+    pushReason(
+      reasons,
+      'quality_result_unreadable',
+      '無法判讀品質結果（quality_result 不是布林值）',
+      '請重試；若持續發生請把技術細節交給管理員對照 Central 版本'
+    );
+    return { reasons };
+  }
+
+  // Observed Central format: condition booleans (true=OK, false=fail)
+  if (obj.condition && typeof obj.condition === 'object' && !Array.isArray(obj.condition)) {
+    const fromCond = explainConditionFlags(obj.condition);
+    for (const r of fromCond) reasons.push(r);
+    if (reasons.length === 0 && obj.quality_result === false) {
+      pushReason(
+        reasons,
+        'quality_result_false',
+        '品質檢查未通過（未標示具體不合格項目）',
+        '請改拍一張：單人、正面、光線均勻、臉清楚無遮擋'
+      );
+    }
+    if (reasons.length === 0) {
+      pushReason(
+        reasons,
+        'generic',
+        '人臉品質未達標準',
+        '請改拍一張清楚正面照'
+      );
+    }
+    return { reasons };
+  }
+
+  // ---- Fallback heuristics ONLY when no condition object ----
   const nodes = [];
   collectPaths(obj, nodes, '', 0, { count: 0 });
 
-  // face count
   const faceCountNode =
     findFirst(nodes, ['face_count', 'facecount', 'num_faces', 'face_num', 'faces_count'], (v) => toNumber(v) != null) ||
     findFirst(nodes, ['faces'], (v) => Array.isArray(v));
@@ -233,20 +324,14 @@ function explainQcFailure(obj) {
     if (count === 0) {
       pushReason(reasons, 'no_face', '偵測不到人臉', '請確認臉在畫面中央、光線足夠，並正面面對鏡頭');
     } else if (count != null && count > 1) {
-      pushReason(
-        reasons,
-        'multi_face',
-        '偵測到 ' + count + ' 張臉',
-        '請只拍一人，避免背景出現其他人臉'
-      );
+      pushReason(reasons, 'multi_face', '偵測到 ' + count + ' 張臉', '請只拍一人，避免背景出現其他人臉');
     }
   }
 
-  // quality / score vs threshold
   const scoreNode = findFirst(
     nodes,
     ['quality_score', 'face_quality', 'quality', 'score', 'qc_score'],
-    (v) => toNumber(v) != null
+    (v) => typeof v === 'number' || (typeof v === 'string' && toNumber(v) != null)
   );
   const thrNode = findFirst(
     nodes,
@@ -257,29 +342,17 @@ function explainQcFailure(obj) {
     const score = toNumber(scoreNode.value);
     const thr = thrNode ? toNumber(thrNode.value) : null;
     if (thr != null && score != null && score < thr) {
-      pushReason(
-        reasons,
-        'quality_low',
-        '品質分數 ' + trimNum(score) + ' 低於門檻 ' + trimNum(thr),
-        '請靠近一點、保持清晰對焦，並避免過暗或過曝'
-      );
+      pushReason(reasons, 'quality_low', '品質分數 ' + trimNum(score) + ' 低於門檻 ' + trimNum(thr), '請靠近一點、保持清晰對焦，並避免過暗或過曝');
     } else if (score != null && score < 0.45 && (thr == null || thr <= 1)) {
-      // heuristic for 0–1 scores
-      pushReason(
-        reasons,
-        'quality_low',
-        '品質分數偏低（' + trimNum(score) + '）',
-        '請改拍一張更清楚、光線均勻的正面照'
-      );
+      pushReason(reasons, 'quality_low', '品質分數偏低（' + trimNum(score) + '）', '請改拍一張更清楚、光線均勻的正面照');
     }
   }
 
-  // blur / sharpness
-  const blurNode = findFirst(nodes, ['blur', 'blur_score', 'is_blur', 'blurry', 'fuzzy']);
+  const blurNode = findFirst(nodes, ['blur', 'blur_score', 'is_blur', 'blurry', 'fuzzy'], (v) => typeof v === 'number' || typeof v === 'string');
   const sharpNode = findFirst(nodes, ['sharpness', 'clarity', 'sharp_score'], (v) => toNumber(v) != null);
   if (blurNode) {
     const bn = toNumber(blurNode.value);
-    if (looksTruthyFail(blurNode.value) || (bn != null && bn > 0.5 && bn <= 1) || (bn != null && bn > 50)) {
+    if ((bn != null && bn > 0.5 && bn <= 1) || (bn != null && bn > 50) || (typeof blurNode.value === 'string' && /blur|fuzzy|bad/i.test(blurNode.value))) {
       pushReason(reasons, 'blur', '畫面模糊', '請固定手機／相機後再拍，避免晃動');
     }
   }
@@ -290,7 +363,6 @@ function explainQcFailure(obj) {
     }
   }
 
-  // pose yaw/pitch/roll
   const yawNode = findFirst(nodes, ['yaw', 'pose_yaw', 'head_yaw', 'face_yaw'], (v) => toNumber(v) != null);
   const pitchNode = findFirst(nodes, ['pitch', 'pose_pitch', 'head_pitch', 'face_pitch'], (v) => toNumber(v) != null);
   const rollNode = findFirst(nodes, ['roll', 'pose_roll', 'head_roll', 'face_roll'], (v) => toNumber(v) != null);
@@ -299,31 +371,15 @@ function explainQcFailure(obj) {
   const rollDeg = rollNode ? toDegrees(rollNode.value) : null;
   const POSE_LIMIT = 12;
   if (yawDeg != null && Math.abs(yawDeg) >= POSE_LIMIT) {
-    pushReason(
-      reasons,
-      'pose_yaw',
-      '臉偏' + directionYaw(yawDeg) + '約 ' + Math.round(Math.abs(yawDeg)) + '°',
-      '請正面直視鏡頭，不要左右轉頭'
-    );
+    pushReason(reasons, 'pose_yaw', '臉偏' + directionYaw(yawDeg) + '約 ' + Math.round(Math.abs(yawDeg)) + '°', '請正面直視鏡頭，不要左右轉頭');
   }
   if (pitchDeg != null && Math.abs(pitchDeg) >= POSE_LIMIT) {
-    pushReason(
-      reasons,
-      'pose_pitch',
-      '臉偏' + directionPitch(pitchDeg) + '約 ' + Math.round(Math.abs(pitchDeg)) + '°',
-      '請平視鏡頭，不要過度抬頭或低頭'
-    );
+    pushReason(reasons, 'pose_pitch', '臉偏' + directionPitch(pitchDeg) + '約 ' + Math.round(Math.abs(pitchDeg)) + '°', '請平視鏡頭，不要過度抬頭或低頭');
   }
   if (rollDeg != null && Math.abs(rollDeg) >= POSE_LIMIT) {
-    pushReason(
-      reasons,
-      'pose_roll',
-      '頭部傾斜約 ' + Math.round(Math.abs(rollDeg)) + '°',
-      '請把臉擺正，兩眼連線儘量水平'
-    );
+    pushReason(reasons, 'pose_roll', '頭部傾斜約 ' + Math.round(Math.abs(rollDeg)) + '°', '請把臉擺正，兩眼連線儘量水平');
   }
 
-  // brightness / exposure
   const brightNode = findFirst(
     nodes,
     ['brightness', 'exposure', 'lighting', 'luminance', 'lightness', 'illumination'],
@@ -338,55 +394,15 @@ function explainQcFailure(obj) {
       pushReason(reasons, 'bright', '光線過亮／過曝', '請避免強光直射或背光，改到光線柔和處');
     }
   }
-  const darkFlag = findFirst(nodes, ['is_dark', 'too_dark', 'under_exposed', 'underexposed']);
-  if (darkFlag && looksTruthyFail(darkFlag.value)) {
-    pushReason(reasons, 'dark', '光線太暗', '請到光線均勻處拍攝，避免逆光或陰影遮臉');
-  }
-  const brightFlag = findFirst(nodes, ['is_bright', 'too_bright', 'over_exposed', 'overexposed']);
-  if (brightFlag && looksTruthyFail(brightFlag.value)) {
-    pushReason(reasons, 'bright', '光線過亮／過曝', '請避免強光直射，改到光線柔和處');
-  }
 
-  // occlusion / mask / glasses
-  const occ = findFirst(nodes, ['occlusion', 'occluded', 'is_occluded', 'face_occlusion', 'covered']);
-  if (occ && (looksTruthyFail(occ.value) || (toNumber(occ.value) != null && toNumber(occ.value) > 0.4))) {
-    pushReason(reasons, 'occlusion', '臉部有遮擋', '請拿開口罩、帽子或手，讓整張臉清楚入鏡');
-  }
-  const mask = findFirst(nodes, ['mask', 'wearing_mask', 'has_mask', 'face_mask', 'is_mask']);
-  if (mask && looksTruthyFail(mask.value)) {
-    pushReason(reasons, 'mask', '偵測到口罩', '註冊請暫時拿開口罩，露出完整臉部');
-  }
-  const glasses = findFirst(nodes, ['glasses', 'sunglasses', 'has_glasses', 'eye_glasses', 'wearing_glasses']);
-  if (glasses && looksTruthyFail(glasses.value)) {
-    const sun = /sun/i.test(glasses.norm) || /sun/i.test(String(glasses.value));
-    pushReason(
-      reasons,
-      sun ? 'sunglasses' : 'glasses',
-      sun ? '偵測到太陽眼鏡' : '偵測到眼鏡反光／遮擋風險',
-      sun ? '請取下太陽眼鏡後再拍' : '若鏡片反光明顯，請暫時取下眼鏡或調整角度'
-    );
-  }
+  // NOTE: do NOT treat boolean occlusion/mask/face_size as "problem=true" —
+  // that polarity is wrong for observed Central condition flags.
 
-  // face size / iod
-  const sizeNode = findFirst(
-    nodes,
-    ['face_size', 'face_ratio', 'face_width', 'face_height', 'face_scale', 'size_ratio'],
-    (v) => toNumber(v) != null
-  );
   const iodNode = findFirst(
     nodes,
     ['iod', 'inter_ocular', 'interocular', 'eye_distance', 'pupil_distance', 'eye_dist'],
     (v) => toNumber(v) != null
   );
-  if (sizeNode) {
-    const s = toNumber(sizeNode.value);
-    // ratio 0–1 or percent
-    if (s != null && ((s > 0 && s < 0.05) || (s > 1 && s < 5))) {
-      pushReason(reasons, 'face_small', '臉在畫面中太小', '請靠近鏡頭，讓臉约占畫面更大比例');
-    } else if (s != null && ((s > 0.85 && s <= 1.5) || s > 90)) {
-      pushReason(reasons, 'face_large', '臉過於靠近鏡頭', '請稍後退，讓整張臉與雙肩邊緣都入鏡');
-    }
-  }
   if (iodNode) {
     const iod = toNumber(iodNode.value);
     if (iod != null && iod > 0 && iod < 32) {
@@ -394,22 +410,12 @@ function explainQcFailure(obj) {
     }
   }
 
-  // explicit message / code from Central
   const msgNode = findFirst(nodes, ['message', 'msg', 'error_message', 'fail_reason', 'reject_reason', 'reason', 'detail', 'description'], (v) => typeof v === 'string' && v.trim());
-  const codeNode = findFirst(nodes, ['error_code', 'err_code', 'qc_code', 'code', 'fail_code', 'result_code'], (v) => v != null && String(v).trim() !== '');
   if (msgNode && typeof msgNode.value === 'string') {
     const m = msgNode.value.trim().slice(0, 120);
     if (m && !/^(fail|failed|error|false|null)$/i.test(m)) {
       pushReason(reasons, 'central_message', 'Central 訊息：' + m, '請依上述訊息調整後重拍');
     }
-  }
-  if (codeNode && reasons.length === 0) {
-    pushReason(
-      reasons,
-      'central_code',
-      '品質檢查未通過（代碼 ' + String(codeNode.value).slice(0, 40) + '）',
-      '請換一張清楚正面照；細節見下方技術資訊'
-    );
   }
 
   if (reasons.length === 0) {
@@ -443,7 +449,7 @@ function buildQcFailurePayload(status, body, parseMeta) {
             }
           })()
         : null;
-  const explained = explainQcFailure(obj || {});
+  const explained = explainQcFailure(obj || {}, parseMeta || {});
   const masked = maskQcPayload(obj != null ? obj : body);
   const code = (parseMeta && parseMeta.code) || 'QC_FAIL';
   appendQcLog(masked, {
@@ -461,10 +467,76 @@ function buildQcFailurePayload(status, body, parseMeta) {
   };
 }
 
+function buildImportFailurePayload(status, body, parseMeta) {
+  const obj =
+    body && typeof body === 'object' && !Buffer.isBuffer(body)
+      ? body
+      : typeof body === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(body);
+            } catch (_) {
+              return null;
+            }
+          })()
+        : null;
+  const masked = maskQcPayload(obj != null ? obj : body);
+  const msg = (parseMeta && parseMeta.message) || 'Central 匯入失敗';
+  const reasons = [];
+  if (obj && typeof obj === 'object') {
+    const m =
+      (typeof obj.message === 'string' && obj.message) ||
+      (typeof obj.msg === 'string' && obj.msg) ||
+      (typeof obj.error === 'string' && obj.error) ||
+      (obj.data && typeof obj.data.message === 'string' && obj.data.message) ||
+      null;
+    if (m) {
+      reasons.push({
+        id: 'import_message',
+        text: 'Central 匯入訊息：' + String(m).slice(0, 160),
+        hint: '請確認此人尚未重複註冊，或稍後再試；細節見技術資訊'
+      });
+    }
+    const code =
+      obj.code != null
+        ? obj.code
+        : obj.errorCode != null
+          ? obj.errorCode
+          : obj.errCode != null
+            ? obj.errCode
+            : null;
+    if (code != null && reasons.length === 0) {
+      reasons.push({
+        id: 'import_code',
+        text: '匯入失敗（代碼 ' + String(code).slice(0, 40) + '）',
+        hint: '請稍後再試或聯絡管理員；勿重複連續送出'
+      });
+    }
+  }
+  if (reasons.length === 0) {
+    reasons.push({
+      id: 'import_failed',
+      text: msg,
+      hint: '品質檢查已通過但匯入未完成；請查看技術細節或稍後再試，勿假設已寫入 Central'
+    });
+  }
+  try {
+    appendQcLog(masked, {
+      pass: false,
+      code: (parseMeta && parseMeta.code) || 'IMPORT_FAILED',
+      reasonCount: reasons.length,
+      httpStatus: status
+    });
+  } catch (_) {}
+  return { reasons: reasons, techDetails: masked };
+}
+
 module.exports = {
   maskQcPayload,
   explainQcFailure,
+  explainConditionFlags,
   buildQcFailurePayload,
+  buildImportFailurePayload,
   appendQcLog,
   QC_LOG_PATH,
   SECRET_KEY_RE,

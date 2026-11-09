@@ -1,1 +1,11 @@
-{ "pass": true }
+{
+  "quality_result": true,
+  "condition": {
+    "face_size": true,
+    "angle": true,
+    "occlusion": true,
+    "color": true,
+    "single_face": true,
+    "mask": true
+  }
+}

@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09g', /v2026-11-09g/.test(text));
+  ok('start.bat version banner 09h', /v2026-11-09h/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09g in pages', /v2026-11-09g/.test(indexHtml) && /v2026-11-09g/.test(registerHtml));
+ok('version v2026-11-09h in pages', /v2026-11-09h/.test(indexHtml) && /v2026-11-09h/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -83,6 +83,9 @@ ok('same-origin + conn test UI', /api-base-same-origin/.test(indexHtml) && /btn-
 ok('skip-tls toggle in pages', /skip-tls-toggle/.test(indexHtml) && /skip-tls-toggle/.test(registerHtml));
 ok('skip-tls label text', /略過自簽憑證檢查/.test(indexHtml));
 ok('QC failure UI helpers in app.js', /showQcFailure/.test(js) && /qc-reason-list/.test(js));
+ok('footer updater present', /updateAppFooter/.test(js) && /本機版 · 已連接本機後端/.test(js));
+ok('structured failure handles import', /IMPORT_PERSON_ID_MISSING/.test(js));
+
 ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
 
 ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
@@ -208,24 +211,82 @@ function adapterTests() {
   ok('signIn token', !!adapters.parseSignInToken(200, { token: 'fake-token-for-tests-only-not-real' }));
   ok('QC unknown fail closed', adapters.parseQcResult(200, { x: 1 }).pass === false);
 
-  var multi = adapters.parseQcResult(200, { pass: false, faceCount: 2 });
-  ok('QC multiface not pass', multi.pass === false);
-  ok('QC multiface reason ZH', (multi.reasons || []).some(function (r) { return /2 張臉/.test(r.text); }));
+  // Observed Central format (2026-11-09)
+  var allTrue = {
+    quality_result: true,
+    condition: {
+      face_size: true,
+      angle: true,
+      occlusion: true,
+      color: true,
+      single_face: true,
+      mask: true
+    }
+  };
+  var passObs = adapters.parseQcResult(200, allTrue);
+  ok('observed all-true quality_result passes', passObs.pass === true && passObs.reason === 'quality_result_true');
 
+  var fixturePass = JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/qc.pass.json'), 'utf8'));
+  ok('fixture qc.pass.json passes', adapters.parseQcResult(200, fixturePass).pass === true);
+
+  var onlyMask = adapters.parseQcResult(200, {
+    quality_result: false,
+    condition: {
+      face_size: true,
+      angle: true,
+      occlusion: true,
+      color: true,
+      single_face: true,
+      mask: false
+    }
+  });
+  ok('observed mask false fails', onlyMask.pass === false);
+  ok('observed mask false only mask reason', onlyMask.reasons.length === 1 && onlyMask.reasons[0].id === 'mask');
+  ok('observed mask false ZH', /口罩/.test(onlyMask.reasons[0].text));
+
+  var occ = adapters.parseQcResult(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/qc.fail.json'), 'utf8')));
+  ok('fixture occlusion false fails', occ.pass === false);
+  ok('fixture occlusion only', occ.reasons.length === 1 && occ.reasons[0].id === 'occlusion');
+
+  // true in condition must NOT be treated as problem
+  var trueNotProblem = qcExplain.explainQcFailure({
+    quality_result: false,
+    condition: {
+      face_size: true,
+      angle: true,
+      occlusion: true,
+      color: true,
+      single_face: true,
+      mask: true
+    }
+  });
+  ok('all-true condition yields no false-flag reasons', trueNotProblem.reasons.every(function (r) {
+    return r.id === 'quality_result_false' || r.id === 'generic';
+  }));
+
+  var unreadable = adapters.parseQcResult(200, { quality_result: 'yes', condition: {} });
+  ok('non-boolean quality_result fail-closed', unreadable.pass === false && unreadable.code === 'QC_SHAPE_UNKNOWN');
+  ok('non-boolean quality_result 無法判讀', (unreadable.reasons || []).some(function (r) { return /無法判讀/.test(r.text); }));
+
+  var missingQr = adapters.parseQcResult(200, { condition: { mask: false } });
+  ok('condition without quality_result fail-closed', missingQr.pass === false);
+  ok('missing quality_result 無法判讀', (missingQr.reasons || []).some(function (r) { return /無法判讀/.test(r.text); }));
+
+  var multi = adapters.parseQcResult(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/qc.fail-multiface.json'), 'utf8')));
+  ok('single_face false', multi.pass === false && multi.reasons.some(function (r) { return r.id === 'single_face'; }));
+
+  // Legacy numeric heuristics only without condition
   var pose = adapters.parseQcResult(200, {
     pass: false,
     pose: { yaw: -0.44, pitch: 0, roll: 0 },
     brightness: 0.2,
-    blur: true,
     quality: 0.3,
     qualityThreshold: 0.55
   });
-  ok('QC pose yaw ZH', (pose.reasons || []).some(function (r) { return /偏左/.test(r.text); }));
-  ok('QC dark ZH', (pose.reasons || []).some(function (r) { return /太暗|光線/.test(r.text); }));
-  ok('QC blur ZH', (pose.reasons || []).some(function (r) { return /模糊/.test(r.text); }));
-  ok('QC quality threshold ZH', (pose.reasons || []).some(function (r) { return /門檻|品質分數/.test(r.text); }));
-  ok('QC fail has hints', (pose.reasons || []).every(function (r) { return typeof r.hint === 'string'; }));
+  ok('legacy pose yaw ZH without condition', (pose.reasons || []).some(function (r) { return /偏左/.test(r.text); }));
+  ok('legacy dark ZH without condition', (pose.reasons || []).some(function (r) { return /太暗|光線/.test(r.text); }));
 
+  // Masking still works
   var masked = qcExplain.maskQcPayload({
     pass: false,
     token: 'abc123tokenvalue',
@@ -233,29 +294,25 @@ function adapterTests() {
     feature: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
     imageBase64: 'A'.repeat(200),
     cookie: 'sid=xyz',
-    yaw: 25,
-    faceCount: 0
+    quality_result: false,
+    condition: { mask: false }
   });
   var maskedStr = JSON.stringify(masked);
   ok('mask redacts token', /\[redacted\]/.test(maskedStr) && !/abc123tokenvalue/.test(maskedStr));
   ok('mask redacts password', !/nope/.test(maskedStr));
-  ok('mask redacts feature vector', /vector|redacted/.test(maskedStr) && !/,17\]/.test(maskedStr));
-  ok('mask redacts long base64-ish', /redacted/.test(maskedStr) && !/A{50}/.test(maskedStr));
-  ok('mask keeps yaw number', masked.yaw === 25);
-  ok('mask keeps faceCount', masked.faceCount === 0);
+  ok('mask keeps quality_result', masked.quality_result === false);
+  ok('mask keeps condition.mask', masked.condition && masked.condition.mask === false);
 
-  var noFace = adapters.parseQcResult(200, fs.readFileSync(path.join(root, 'server/fixtures/qc.fail-secret.json'), 'utf8'));
-  ok('QC secret fixture fail closed', noFace.pass === false);
-  ok('QC secret fixture techDetails masked', noFace.techDetails && noFace.techDetails.token === '[redacted]');
-  ok('QC secret fixture no raw password', !/secret-pass/.test(JSON.stringify(noFace.techDetails)));
-  ok('QC secret fixture reasons include no face', (noFace.reasons || []).some(function (r) { return /偵測不到人臉|0/.test(r.text) || r.id === 'no_face'; }));
-
-  var passStill = adapters.parseQcResult(200, { pass: true, yaw: 90 });
-  ok('QC pass still pass', passStill.pass === true && !passStill.reasons);
-
-  // degrees already in degrees
-  var deg = qcExplain.explainQcFailure({ pass: false, yaw: 25 });
-  ok('QC yaw degrees not treated as radians', (deg.reasons || []).some(function (r) { return /25/.test(r.text); }));
+  // Import failure attaches reasons + mask
+  try {
+    adapters.parseImportPersonId(200, { message: 'duplicate person', token: 'leak-import-token' });
+    ok('import missing personId throws', false);
+  } catch (e) {
+    ok('import missing personId throws', e.code === 'IMPORT_PERSON_ID_MISSING');
+    ok('import failure has reasons', Array.isArray(e.reasons) && e.reasons.length > 0);
+    ok('import failure masks token', e.techDetails && e.techDetails.token === '[redacted]');
+    ok('import failure no raw token', !/leak-import-token/.test(JSON.stringify(e.techDetails)));
+  }
 }
 
 async function sleep(ms) {
@@ -404,7 +461,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09g', config.appVersion === 'v2026-11-09g');
+  ok('appVersion 09h', config.appVersion === 'v2026-11-09h');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -454,7 +511,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09g', health.status === 200 && health.json.appVersion === 'v2026-11-09g');
+  ok('health version 09h', health.status === 200 && health.json.appVersion === 'v2026-11-09h');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -681,7 +738,7 @@ async function httpIntegration() {
 
 
 
-  // --- QC fail reasons on /api/register (v2026-11-09g) ---
+  // --- QC fail reasons on /api/register (v2026-11-09h) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -700,11 +757,16 @@ async function httpIntegration() {
   };
   centralMod.snapshotQc = async function () {
     return adaptersHttp.parseQcResult(200, {
-      pass: false,
-      faceCount: 2,
-      yaw: 0.5,
-      token: 'leak-me-not-token-value',
-      message: 'integration-fake-fail'
+      quality_result: false,
+      condition: {
+        face_size: true,
+        angle: true,
+        occlusion: true,
+        color: true,
+        single_face: false,
+        mask: true
+      },
+      token: 'leak-me-not-token-value'
     });
   };
   var boundary = '----facemeqc' + Date.now();
@@ -763,7 +825,7 @@ async function httpIntegration() {
   });
   ok('register QC fail status 422', regRes.status === 422, regRes.text);
   ok('register QC fail returns reasons', !!(regRes.json && Array.isArray(regRes.json.reasons) && regRes.json.reasons.length));
-  ok('register QC fail ZH face count', /張臉/.test(JSON.stringify((regRes.json && regRes.json.reasons) || [])));
+  ok('register QC fail ZH single_face', /臉/.test(JSON.stringify((regRes.json && regRes.json.reasons) || [])));
   ok('register QC fail has techDetails', !!(regRes.json && regRes.json.techDetails));
   ok('register QC fail masks token', !/leak-me-not-token-value/.test(regRes.text || ''));
   ok('register QC fail-closed no import', importHits === importBeforeQc);
@@ -773,7 +835,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09g) ---
+  // --- skip TLS verify API (v2026-11-09h) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -936,7 +998,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09g');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09h');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

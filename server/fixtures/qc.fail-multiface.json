@@ -1,5 +1,11 @@
 {
-  "pass": false,
-  "faceCount": 2,
-  "message": "multiple faces"
+  "quality_result": false,
+  "condition": {
+    "face_size": true,
+    "angle": true,
+    "occlusion": true,
+    "color": true,
+    "single_face": false,
+    "mask": true
+  }
 }

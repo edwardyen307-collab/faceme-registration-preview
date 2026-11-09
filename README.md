@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09g**
+版本：**v2026-11-09h**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09g.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09h.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -61,7 +61,7 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 
 可選：`setup-and-start.ps1` 同樣只呼叫上述 Node 腳本，**不** Bypass。ZIP 的 Mark of the Web 請用「解除鎖定」，或直接用 `start.bat`。
 
-## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09g）
+## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09h）
 
 錯誤會展開底層原因。常見：
 - **ECONNREFUSED**：該 IP／埠沒有服務（`https://127.0.0.1`＝443 埠；Central 若在別的埠請寫 `:埠號`）
@@ -69,16 +69,16 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 - **EPROTO**：http／https 弄反
 詳見畫面訊息與 `runtime/upstream.log`。
 
-## 「聲明版本不符」怎麼辦（v2026-11-09g）
+## 「聲明版本不符」怎麼辦（v2026-11-09h）
 
 原因多半是：舊 `.env` 裡有 `FACEME_STATEMENT_VERSION=…`（建立 .env 時從舊 example 帶入），而網頁已更新。  
 現在程式以 `statement-version.json` 為準，**會忽略 .env 裡不同的覆寫值**（不自動改你的 .env）。建議刪除或註解該行後重開 `start.bat`，並重新整理瀏覽器。
 
-## TLS 與 IP 位址（v2026-11-09g）
+## TLS 與 IP 位址（v2026-11-09h）
 
 連線 `https://127.0.0.1`（或其它 IP）時**不會**再設定非法的 TLS `servername`（Node 禁止 SNI 為 IP）。憑證驗證預設仍開啟；若出現「憑證不被信任／名稱不符」，請改用憑證 SAN 上的主機名、匯入 CA，或僅在明白風險時設 `FACEME_SKIP_TLS_VERIFY=1`（不會自動略過）。
 
-## 略過自簽憑證（v2026-11-09g）
+## 略過自簽憑證（v2026-11-09h）
 
 本機版連線設定區有開關「**略過自簽憑證檢查（僅限本機 Central）**」。
 
@@ -120,7 +120,7 @@ npm test
 - 薄後端僅內網／本機試驗，勿對網際網路公開。
 - 規格見 `server/fixtures/`；**未**宣稱已對真實 Central 驗證通過。
 
-## QC 失敗原因（v2026-11-09g）
+## QC 失敗原因（v2026-11-09h）
 
 真實註冊若人臉品質檢查未通過，畫面會列出**白話原因與調整建議**（例如偵測到多張臉、光線太暗、臉偏轉），並可展開已遮罩的「技術細節」。
 
@@ -128,3 +128,15 @@ npm test
 - 遮罩後的內容會寫入 `runtime/qc.log`（與 `upstream.log`），不含 token／帳密／影像／特徵值。
 - 欄位名稱依文件與常見別名**寬鬆比對**；Central 實際 swagger 欄位若不同，可對照 log 再改進解析。
 
+
+## QC 真實格式（v2026-11-09h）
+
+Central 實際回應（2026-11-09 觀察）：
+
+```json
+{ "quality_result": true, "condition": { "face_size": true, "angle": true, "occlusion": true, "color": true, "single_face": true, "mask": true } }
+```
+
+- 只有 `quality_result === true` 算通過
+- `condition` 各項：`true`＝該項通過、`false`＝不合格（才顯示原因）
+- 缺欄或非布林 → fail-closed「無法判讀」

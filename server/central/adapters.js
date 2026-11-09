@@ -3,10 +3,9 @@
 /**
  * Response adapters for FaceMe Security Central.
  *
- * IMPORTANT: Shapes below are ASSUMED from the operator-provided API brief
- * (not live-verified in this environment). Fail closed on unknown shapes.
- * Adjust fixtures + adapters after intranet verification against:
- *   https://192.168.32.220/swagger-ui/doc.html
+ * QC shape (quality_result + condition): observed 2026-11-09 from live Central.
+ * Other shapes still fail-closed / loosely matched. Import personId still assumed.
+ * Swagger: https://192.168.32.220/swagger-ui/doc.html
  */
 
 function asObject(body) {
@@ -54,15 +53,21 @@ function parseSignInToken(status, body, contentType) {
   return token;
 }
 
-const { buildQcFailurePayload } = require('./qc-explain');
+const {
+  buildQcFailurePayload,
+  buildImportFailurePayload
+} = require('./qc-explain');
 
 /**
  * QC must explicitly pass. HTTP 200 alone is NOT pass.
- * Assumed pass signals (any one):
- *   { pass: true } | { success: true } | { data: { pass: true } } | { result: "PASS"|"pass"|"ok" }
- * Assumed fail: pass===false, success===false, result FAIL/fail, or unknown.
- * Failures include Traditional-Chinese reasons + masked techDetails (see qc-explain.js).
- * Field names are loosely matched — NOT live-verified against Central swagger.
+ *
+ * Canonical (observed 2026-11-09 live Central):
+ *   { quality_result: true|false, condition: { face_size, angle, occlusion, color, single_face, mask } }
+ *   quality_result === true → pass
+ *   quality_result === false → fail; condition.* true=item OK, false=item failed
+ *   quality_result present but not boolean → fail-closed (無法判讀)
+ *
+ * Legacy fixtures still accepted: pass/success/result PASS.
  */
 function parseQcResult(status, body) {
   function fail(meta) {
@@ -75,6 +80,22 @@ function parseQcResult(status, body) {
   if (!obj) {
     return fail({ reason: 'unknown_shape', code: 'QC_SHAPE_UNKNOWN' });
   }
+
+  if (Object.prototype.hasOwnProperty.call(obj, 'quality_result')) {
+    if (obj.quality_result === true) {
+      return { pass: true, reason: 'quality_result_true' };
+    }
+    if (obj.quality_result === false) {
+      return fail({ reason: 'quality_result_false', code: 'QC_FAIL' });
+    }
+    return fail({ reason: 'quality_result_unreadable', code: 'QC_SHAPE_UNKNOWN' });
+  }
+
+  // Looks like observed Central format but quality_result missing → fail-closed
+  if (obj.condition && typeof obj.condition === 'object' && !Array.isArray(obj.condition)) {
+    return fail({ reason: 'quality_result_unreadable', code: 'QC_SHAPE_UNKNOWN' });
+  }
+
   if (obj.pass === true) return { pass: true, reason: 'pass_true' };
   if (obj.success === true && obj.pass !== false) {
     if (obj.result && /fail/i.test(String(obj.result))) {
@@ -97,22 +118,25 @@ function parseQcResult(status, body) {
 
 /**
  * Import success → personId.
- * Assumed: { personId } | { data: { personId } } | { id } when clearly person import context.
- * HTTP 200 alone is NOT enough without an id field.
+ * Assumed: { personId } | { data: { personId } } | { id }.
+ * Failures attach ZH reasons + masked techDetails.
  */
 function parseImportPersonId(status, body) {
-  if (status < 200 || status >= 300) {
-    const err = new Error('Central 匯入失敗');
-    err.code = 'IMPORT_FAILED';
+  function fail(message, code) {
+    const payload = buildImportFailurePayload(status, body, { code: code, message: message });
+    const err = new Error(message);
+    err.code = code;
     err.status = 502;
+    err.reasons = payload.reasons;
+    err.techDetails = payload.techDetails;
     throw err;
+  }
+  if (status < 200 || status >= 300) {
+    fail('Central 匯入失敗（HTTP ' + status + '）', 'IMPORT_FAILED');
   }
   const obj = asObject(body);
   if (!obj) {
-    const err = new Error('Central 匯入回應格式未知（fail closed）');
-    err.code = 'IMPORT_SHAPE_UNKNOWN';
-    err.status = 502;
-    throw err;
+    fail('Central 匯入回應格式未知（fail closed）', 'IMPORT_SHAPE_UNKNOWN');
   }
   const personId =
     (obj.personId != null && String(obj.personId)) ||
@@ -120,10 +144,7 @@ function parseImportPersonId(status, body) {
     (obj.id != null && String(obj.id)) ||
     null;
   if (!personId) {
-    const err = new Error('Central 匯入回應缺少 personId（fail closed）');
-    err.code = 'IMPORT_PERSON_ID_MISSING';
-    err.status = 502;
-    throw err;
+    fail('Central 匯入回應缺少 personId（fail closed）', 'IMPORT_PERSON_ID_MISSING');
   }
   return personId;
 }
@@ -133,5 +154,6 @@ module.exports = {
   parseQcResult,
   parseImportPersonId,
   asObject,
-  buildQcFailurePayload
+  buildQcFailurePayload,
+  buildImportFailurePayload
 };

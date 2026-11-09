@@ -12,10 +12,47 @@ These fixtures are **fake data** for adapters/tests. Adjust after intranet verif
 - Authorization on later calls: raw token header value, **no** `Bearer ` prefix
 
 ## POST `/api/website/snapshot/qc`
+
 - Request: multipart field `image`
-- Assumed pass: `{ "pass": true }` or `{ "success": true }` or `{ "result": "PASS" }`
-- Assumed fail: `{ "pass": false }` / `{ "success": false }` / `{ "result": "FAIL" }`
+- **Observed live Central response (2026-11-09)** — this is the canonical shape:
+
+```json
+{
+  "quality_result": true,
+  "condition": {
+    "face_size": true,
+    "angle": true,
+    "occlusion": true,
+    "color": true,
+    "single_face": true,
+    "mask": true
+  }
+}
+```
+
+- `quality_result === true` → QC **pass** (only this boolean grants pass for this shape)
+- `quality_result === false` → QC **fail**; each `condition.*` value: **`true` = that check passed**, **`false` = that check failed**
+- `quality_result` missing or non-boolean → **fail-closed** with「無法判讀」
+- Legacy fixture shapes (`pass` / `success` / `result`) still accepted for older tests
 - **HTTP 200 with unknown body = QC fail (fail closed)** — never treat status alone as pass
+
+### QC failure reason extraction (v2026-11-09h)
+
+When `condition` is present, **only `false` flags** become Traditional Chinese reasons:
+
+| condition key | Meaning when false |
+| --- | --- |
+| `face_size` | 臉太小或太大，請調整距離 |
+| `angle` | 角度不正，請正面直視 |
+| `occlusion` | 有遮擋 |
+| `color` | 顏色或光線異常 |
+| `single_face` | 不只一張臉 |
+| `mask` | 戴了口罩 |
+
+Numeric / alias heuristics (yaw, blur scores, …) run **only when `condition` is absent**.
+Do **not** invert condition booleans (true never means “has problem”).
+Masked tech details go to `runtime/qc.log` / `upstream.log`.
+
 
 ## POST `/api/website/person/import`
 - Request: multipart `name`, `snapshot`, optional `employeeId`

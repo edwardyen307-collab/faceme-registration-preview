@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09g';
+  var APP_VERSION = 'v2026-11-09h';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -141,6 +141,31 @@
     return getApiBase() + path;
   }
 
+
+  var cachedRealModeEnabled = null;
+
+  function updateAppFooter() {
+    var footer = document.getElementById('app-footer') || document.querySelector('.app-footer');
+    if (!footer) return;
+    var ver = APP_VERSION;
+    if (isPagesHost()) {
+      footer.textContent = 'FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · ' + ver;
+      return;
+    }
+    if (isLocalLoopbackPage() && getApiBase()) {
+      var realLabel =
+        cachedRealModeEnabled === true ? '開' : cachedRealModeEnabled === false ? '關' : '查詢中';
+      footer.textContent =
+        'FaceMe 註冊預覽 · 本機版 · 已連接本機後端 · 真實模式 ' + realLabel + ' · ' + ver;
+      return;
+    }
+    if (getApiBase()) {
+      footer.textContent = 'FaceMe 註冊預覽 · 薄後端模式 · ' + ver;
+      return;
+    }
+    footer.textContent = 'FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · ' + ver;
+  }
+
   function updateModeBanner(el) {
     if (!el) return;
     var base = getApiBase();
@@ -149,6 +174,7 @@
       el.innerHTML =
         '<strong>預覽模式（Mock）</strong>：未設定後端 API base。同意與註冊只在本機模擬，' +
         '<strong>不會</strong>送出任何外部請求，也不會寫入 FaceMe。';
+      updateAppFooter();
       return;
     }
     if (isMixedContentRisk(base)) {
@@ -158,6 +184,7 @@
         '不可將 API base 設為 <code>http://…</code>（瀏覽器 mixed content）。' +
         '請改以<strong>內網同源 HTTPS</strong>開啟本前端（由薄後端靜態服務），勿關閉瀏覽器安全功能。' +
         'GitHub Pages <strong>無法</strong>直連內網 Central。';
+      updateAppFooter();
       return;
     }
     el.className = 'mode-banner mode-real';
@@ -166,6 +193,7 @@
       '帳密只在伺服器 .env。即使選了後端，若未開啟 FACEME_REAL_MODE＋法務確認，註冊仍不會寫入 Central。' +
       '連線失敗<strong>不會</strong>改走 Mock 假成功。可用「連線測試」檢查 Central（≠ health）。';
     el.querySelector('code').textContent = base;
+    updateAppFooter();
   }
 
 
@@ -203,6 +231,10 @@
           throw new Error('無法取得聲明版本');
         }
         STATEMENT_VERSION = pack.data.statementVersion;
+          if (typeof pack.data.realModeEnabled === 'boolean') {
+            cachedRealModeEnabled = pack.data.realModeEnabled;
+            updateAppFooter();
+          }
         updateStatementVersionDisplay();
         if (pack.data.statementEnvWarning) {
           console.warn(pack.data.statementEnvWarning);
@@ -746,12 +778,24 @@
     }
 
     function showQcFailure(data) {
+      showStructuredFailure(data, 'qc');
+    }
+
+    function showStructuredFailure(data, kind) {
       if (!resultBox) return;
-      var title = (data && data.error) || '人臉品質檢查未通過，已取消匯入';
+      var isImport = kind === 'import';
+      var title =
+        (data && data.error) ||
+        (isImport ? '匯入 Central 失敗' : '人臉品質檢查未通過，已取消匯入');
       var reasons = (data && data.reasons) || [];
       var html = '';
       html += '<div class="qc-fail-title">' + escapeHtml(title) + '</div>';
-      html += '<p class="qc-fail-note">尚未匯入 Central（fail-closed）。請依下列原因調整後重拍。</p>';
+      html +=
+        '<p class="qc-fail-note">' +
+        (isImport
+          ? '品質檢查可能已通過，但人員尚未確認寫入。請依下列說明處理，勿假設已匯入。'
+          : '尚未匯入 Central（fail-closed）。請依下列原因調整後重拍。') +
+        '</p>';
       if (reasons.length) {
         html += '<ul class="qc-reason-list">';
         for (var i = 0; i < reasons.length; i++) {
@@ -943,9 +987,12 @@
                 code === 'QC_FAIL' ||
                 code === 'QC_HTTP_ERROR' ||
                 code === 'QC_SHAPE_UNKNOWN' ||
+                code === 'IMPORT_FAILED' ||
+                code === 'IMPORT_SHAPE_UNKNOWN' ||
+                code === 'IMPORT_PERSON_ID_MISSING' ||
                 (pack.data && Array.isArray(pack.data.reasons) && pack.data.reasons.length)
               ) {
-                showQcFailure(pack.data || {});
+                showStructuredFailure(pack.data || {}, code && String(code).indexOf('IMPORT') === 0 ? 'import' : 'qc');
                 return;
               }
               throw new Error(
@@ -957,7 +1004,7 @@
               throw new Error('後端未回傳 personId（不會改走 Mock）');
             }
             clearAllConsent();
-            showResult('註冊成功（經內網薄後端）。personId：' + pack.data.personId, true);
+            showResult('已成功匯入 Central。personId：' + pack.data.personId + (pack.data.message ? '（' + pack.data.message + '）' : ''), true);
           })
           .catch(function (e) {
             setFormError(e.message || '無法連線後端（不會改走 Mock 假成功）');
@@ -997,6 +1044,7 @@
     initRegisterPage: initRegisterPage,
     initApiBasePanel: initApiBasePanel,
     updateModeBanner: updateModeBanner,
+    updateAppFooter: updateAppFooter,
     applyLocalOneClickDefaults: applyLocalOneClickDefaults,
     isLocalLoopbackPage: isLocalLoopbackPage,
     runConnectionTest: runConnectionTest,

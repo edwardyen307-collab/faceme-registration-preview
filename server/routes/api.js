@@ -225,7 +225,12 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
     imageBuffer = null;
     if (req.file) req.file.buffer = null;
 
-    res.json({ personId, mode: 'real' });
+    res.json({
+      personId,
+      mode: 'real',
+      imported: true,
+      message: '已成功匯入 Central'
+    });
   } catch (e) {
     imageBuffer = null;
     if (req.file) req.file.buffer = null;
