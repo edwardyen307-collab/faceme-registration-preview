@@ -208,6 +208,8 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
       const err = new Error('人臉品質檢查未通過，已取消匯入');
       err.code = qc.code || 'QC_FAIL';
       err.status = 422;
+      err.reasons = Array.isArray(qc.reasons) ? qc.reasons : [];
+      err.techDetails = qc.techDetails != null ? qc.techDetails : null;
       throw err;
     }
 

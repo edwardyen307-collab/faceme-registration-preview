@@ -1,1 +1,11 @@
-{ "pass": false, "message": "fake qc fail" }
+{
+  "pass": false,
+  "faceCount": 1,
+  "quality": 0.32,
+  "qualityThreshold": 0.55,
+  "blur": true,
+  "pose": { "yaw": -0.44, "pitch": 0.05, "roll": 0.02 },
+  "brightness": 0.22,
+  "occlusion": false,
+  "message": "fake qc fail — quality/pose/lighting"
+}

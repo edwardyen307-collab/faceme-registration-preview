@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09f', /v2026-11-09f/.test(text));
+  ok('start.bat version banner 09g', /v2026-11-09g/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09f in pages', /v2026-11-09f/.test(indexHtml) && /v2026-11-09f/.test(registerHtml));
+ok('version v2026-11-09g in pages', /v2026-11-09g/.test(indexHtml) && /v2026-11-09g/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -82,6 +82,9 @@ ok('README notes 127.0.0.1 not guaranteed for Central', /不保證/.test(readme)
 ok('same-origin + conn test UI', /api-base-same-origin/.test(indexHtml) && /btn-conn-test/.test(indexHtml));
 ok('skip-tls toggle in pages', /skip-tls-toggle/.test(indexHtml) && /skip-tls-toggle/.test(registerHtml));
 ok('skip-tls label text', /略過自簽憑證檢查/.test(indexHtml));
+ok('QC failure UI helpers in app.js', /showQcFailure/.test(js) && /qc-reason-list/.test(js));
+ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
+
 ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
 ok('load-dotenv module exists', fs.existsSync(path.join(root, 'server/load-dotenv.js')));
 
@@ -201,8 +204,58 @@ function tlsOptionTests() {
 
 function adapterTests() {
   var adapters = require(path.join(root, 'server/central/adapters'));
+  var qcExplain = require(path.join(root, 'server/central/qc-explain'));
   ok('signIn token', !!adapters.parseSignInToken(200, { token: 'fake-token-for-tests-only-not-real' }));
   ok('QC unknown fail closed', adapters.parseQcResult(200, { x: 1 }).pass === false);
+
+  var multi = adapters.parseQcResult(200, { pass: false, faceCount: 2 });
+  ok('QC multiface not pass', multi.pass === false);
+  ok('QC multiface reason ZH', (multi.reasons || []).some(function (r) { return /2 張臉/.test(r.text); }));
+
+  var pose = adapters.parseQcResult(200, {
+    pass: false,
+    pose: { yaw: -0.44, pitch: 0, roll: 0 },
+    brightness: 0.2,
+    blur: true,
+    quality: 0.3,
+    qualityThreshold: 0.55
+  });
+  ok('QC pose yaw ZH', (pose.reasons || []).some(function (r) { return /偏左/.test(r.text); }));
+  ok('QC dark ZH', (pose.reasons || []).some(function (r) { return /太暗|光線/.test(r.text); }));
+  ok('QC blur ZH', (pose.reasons || []).some(function (r) { return /模糊/.test(r.text); }));
+  ok('QC quality threshold ZH', (pose.reasons || []).some(function (r) { return /門檻|品質分數/.test(r.text); }));
+  ok('QC fail has hints', (pose.reasons || []).every(function (r) { return typeof r.hint === 'string'; }));
+
+  var masked = qcExplain.maskQcPayload({
+    pass: false,
+    token: 'abc123tokenvalue',
+    password: 'nope',
+    feature: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
+    imageBase64: 'A'.repeat(200),
+    cookie: 'sid=xyz',
+    yaw: 25,
+    faceCount: 0
+  });
+  var maskedStr = JSON.stringify(masked);
+  ok('mask redacts token', /\[redacted\]/.test(maskedStr) && !/abc123tokenvalue/.test(maskedStr));
+  ok('mask redacts password', !/nope/.test(maskedStr));
+  ok('mask redacts feature vector', /vector|redacted/.test(maskedStr) && !/,17\]/.test(maskedStr));
+  ok('mask redacts long base64-ish', /redacted/.test(maskedStr) && !/A{50}/.test(maskedStr));
+  ok('mask keeps yaw number', masked.yaw === 25);
+  ok('mask keeps faceCount', masked.faceCount === 0);
+
+  var noFace = adapters.parseQcResult(200, fs.readFileSync(path.join(root, 'server/fixtures/qc.fail-secret.json'), 'utf8'));
+  ok('QC secret fixture fail closed', noFace.pass === false);
+  ok('QC secret fixture techDetails masked', noFace.techDetails && noFace.techDetails.token === '[redacted]');
+  ok('QC secret fixture no raw password', !/secret-pass/.test(JSON.stringify(noFace.techDetails)));
+  ok('QC secret fixture reasons include no face', (noFace.reasons || []).some(function (r) { return /偵測不到人臉|0/.test(r.text) || r.id === 'no_face'; }));
+
+  var passStill = adapters.parseQcResult(200, { pass: true, yaw: 90 });
+  ok('QC pass still pass', passStill.pass === true && !passStill.reasons);
+
+  // degrees already in degrees
+  var deg = qcExplain.explainQcFailure({ pass: false, yaw: 25 });
+  ok('QC yaw degrees not treated as radians', (deg.reasons || []).some(function (r) { return /25/.test(r.text); }));
 }
 
 async function sleep(ms) {
@@ -351,7 +404,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09f', config.appVersion === 'v2026-11-09f');
+  ok('appVersion 09g', config.appVersion === 'v2026-11-09g');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -401,7 +454,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09f', health.status === 200 && health.json.appVersion === 'v2026-11-09f');
+  ok('health version 09g', health.status === 200 && health.json.appVersion === 'v2026-11-09g');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -627,7 +680,100 @@ async function httpIntegration() {
   ok('PUT rejects non-https', badPut.status === 400);
 
 
-  // --- skip TLS verify API (v2026-11-09f) ---
+
+  // --- QC fail reasons on /api/register (v2026-11-09g) ---
+  var adaptersHttp = require(path.join(root, 'server/central/adapters'));
+  var cfgMod = require(path.join(root, 'server/config'));
+  var centralMod = require(path.join(root, 'server/central/client'));
+  var consentMod = require(path.join(root, 'server/consent'));
+  var prevReal = cfgMod.config.realModeEnabled;
+  var prevFlag = cfgMod.config.realModeFlag;
+  var prevLegal = cfgMod.config.legalConfirmed;
+  cfgMod.config.realModeFlag = true;
+  cfgMod.config.legalConfirmed = true;
+  cfgMod.config.realModeEnabled = true;
+  var issuedQc = consentMod.issueTicket(cfgMod.config.statementVersion);
+  var prevQcFn = centralMod.snapshotQc;
+  var prevSignIn = centralMod.signIn;
+  centralMod.signIn = async function () {
+    return 'fake-token-for-tests-only-not-real';
+  };
+  centralMod.snapshotQc = async function () {
+    return adaptersHttp.parseQcResult(200, {
+      pass: false,
+      faceCount: 2,
+      yaw: 0.5,
+      token: 'leak-me-not-token-value',
+      message: 'integration-fake-fail'
+    });
+  };
+  var boundary = '----facemeqc' + Date.now();
+  var imgBuf = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  function mp(name, val, filename, ctype) {
+    var head =
+      '--' +
+      boundary +
+      '\r\nContent-Disposition: form-data; name="' +
+      name +
+      '"';
+    if (filename) {
+      head +=
+        '; filename="' +
+        filename +
+        '"\r\nContent-Type: ' +
+        (ctype || 'application/octet-stream');
+    }
+    head += '\r\n\r\n';
+    return [Buffer.from(head, 'utf8'), Buffer.isBuffer(val) ? val : Buffer.from(String(val), 'utf8'), Buffer.from('\r\n', 'utf8')];
+  }
+  var regParts = []
+    .concat(mp('name', '測試人員'))
+    .concat(mp('employeeId', 'E001'))
+    .concat(mp('consentTicket', issuedQc.ticket))
+    .concat(mp('image', imgBuf, 'face.jpg', 'image/jpeg'));
+  regParts.push(Buffer.from('--' + boundary + '--\r\n', 'utf8'));
+  var regBody = Buffer.concat(regParts);
+  var importBeforeQc = importHits;
+  var regRes = await new Promise(function (resolve, reject) {
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/register',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data; boundary=' + boundary,
+          'Content-Length': regBody.length
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json, text: text });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(regBody);
+    r.end();
+  });
+  ok('register QC fail status 422', regRes.status === 422, regRes.text);
+  ok('register QC fail returns reasons', !!(regRes.json && Array.isArray(regRes.json.reasons) && regRes.json.reasons.length));
+  ok('register QC fail ZH face count', /張臉/.test(JSON.stringify((regRes.json && regRes.json.reasons) || [])));
+  ok('register QC fail has techDetails', !!(regRes.json && regRes.json.techDetails));
+  ok('register QC fail masks token', !/leak-me-not-token-value/.test(regRes.text || ''));
+  ok('register QC fail-closed no import', importHits === importBeforeQc);
+  centralMod.snapshotQc = prevQcFn;
+  centralMod.signIn = prevSignIn;
+  cfgMod.config.realModeFlag = prevFlag;
+  cfgMod.config.legalConfirmed = prevLegal;
+  cfgMod.config.realModeEnabled = prevReal;
+
+  // --- skip TLS verify API (v2026-11-09g) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -790,7 +936,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09f');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09g');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

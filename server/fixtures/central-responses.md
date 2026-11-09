@@ -20,3 +20,25 @@ These fixtures are **fake data** for adapters/tests. Adjust after intranet verif
 ## POST `/api/website/person/import`
 - Request: multipart `name`, `snapshot`, optional `employeeId`
 - Assumed success: `{ "personId": "P-FAKE-001" }` or `{ "data": { "personId": "..." } }`
+
+
+## QC failure reason extraction (v2026-11-09g)
+
+Central's exact JSON field names are **not live-verified** here (intranet swagger only).
+Public FaceMe materials mention QC for occlusion / blur / lighting / angle / size / grayscale.
+
+This thin backend loosely matches common aliases and always fail-closes:
+
+| Concern | Example aliases (case-insensitive) |
+| --- | --- |
+| Face count | `faceCount`, `faces`, `numFaces` |
+| Quality / score | `quality`, `qualityScore`, `score` + `threshold` / `minQuality` |
+| Blur | `blur`, `sharpness`, `clarity` |
+| Pose | `yaw` / `pitch` / `roll` (nested under `pose` / `headPose` OK) |
+| Lighting | `brightness`, `exposure`, `lighting`, `isDark` |
+| Occlusion | `occlusion`, `mask`, `glasses`, `sunglasses` |
+| Size | `faceSize`, `iod`, `interOcular` |
+| Messages | `message`, `errorCode`, `failReason` |
+
+Failures return Traditional Chinese `reasons[]` + masked `techDetails` (no token/password/image/feature).
+Masked payload is also appended to `runtime/qc.log` and `runtime/upstream.log`.

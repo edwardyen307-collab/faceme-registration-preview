@@ -54,25 +54,31 @@ function parseSignInToken(status, body, contentType) {
   return token;
 }
 
+const { buildQcFailurePayload } = require('./qc-explain');
+
 /**
  * QC must explicitly pass. HTTP 200 alone is NOT pass.
  * Assumed pass signals (any one):
  *   { pass: true } | { success: true } | { data: { pass: true } } | { result: "PASS"|"pass"|"ok" }
  * Assumed fail: pass===false, success===false, result FAIL/fail, or unknown.
+ * Failures include Traditional-Chinese reasons + masked techDetails (see qc-explain.js).
+ * Field names are loosely matched — NOT live-verified against Central swagger.
  */
 function parseQcResult(status, body) {
+  function fail(meta) {
+    return buildQcFailurePayload(status, body, meta);
+  }
   if (status < 200 || status >= 300) {
-    return { pass: false, reason: 'http_error', code: 'QC_HTTP_ERROR' };
+    return fail({ reason: 'http_error', code: 'QC_HTTP_ERROR' });
   }
   const obj = asObject(body);
   if (!obj) {
-    return { pass: false, reason: 'unknown_shape', code: 'QC_SHAPE_UNKNOWN' };
+    return fail({ reason: 'unknown_shape', code: 'QC_SHAPE_UNKNOWN' });
   }
   if (obj.pass === true) return { pass: true, reason: 'pass_true' };
   if (obj.success === true && obj.pass !== false) {
-    // success:true without pass:false — still require no explicit fail fields
     if (obj.result && /fail/i.test(String(obj.result))) {
-      return { pass: false, reason: 'result_fail', code: 'QC_FAIL' };
+      return fail({ reason: 'result_fail', code: 'QC_FAIL' });
     }
     return { pass: true, reason: 'success_true' };
   }
@@ -81,12 +87,12 @@ function parseQcResult(status, body) {
     return { pass: true, reason: 'result_pass' };
   }
   if (obj.pass === false || obj.success === false) {
-    return { pass: false, reason: 'explicit_fail', code: 'QC_FAIL' };
+    return fail({ reason: 'explicit_fail', code: 'QC_FAIL' });
   }
   if (typeof obj.result === 'string' && /fail/i.test(obj.result)) {
-    return { pass: false, reason: 'result_fail', code: 'QC_FAIL' };
+    return fail({ reason: 'result_fail', code: 'QC_FAIL' });
   }
-  return { pass: false, reason: 'unknown_shape', code: 'QC_SHAPE_UNKNOWN' };
+  return fail({ reason: 'unknown_shape', code: 'QC_SHAPE_UNKNOWN' });
 }
 
 /**
@@ -126,5 +132,6 @@ module.exports = {
   parseSignInToken,
   parseQcResult,
   parseImportPersonId,
-  asObject
+  asObject,
+  buildQcFailurePayload
 };

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09f';
+  var APP_VERSION = 'v2026-11-09g';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -745,6 +745,51 @@
       resultBox.focus();
     }
 
+    function showQcFailure(data) {
+      if (!resultBox) return;
+      var title = (data && data.error) || '人臉品質檢查未通過，已取消匯入';
+      var reasons = (data && data.reasons) || [];
+      var html = '';
+      html += '<div class="qc-fail-title">' + escapeHtml(title) + '</div>';
+      html += '<p class="qc-fail-note">尚未匯入 Central（fail-closed）。請依下列原因調整後重拍。</p>';
+      if (reasons.length) {
+        html += '<ul class="qc-reason-list">';
+        for (var i = 0; i < reasons.length; i++) {
+          var r = reasons[i] || {};
+          html += '<li><strong>' + escapeHtml(r.text || '') + '</strong>';
+          if (r.hint) html += '<div class="qc-hint">建議：' + escapeHtml(r.hint) + '</div>';
+          html += '</li>';
+        }
+        html += '</ul>';
+      }
+      if (data && data.techDetails) {
+        var tech = '';
+        try {
+          tech = JSON.stringify(data.techDetails, null, 2);
+        } catch (e) {
+          tech = String(data.techDetails);
+        }
+        html +=
+          '<details class="qc-tech"><summary>技術細節（已遮罩，無 token／影像）</summary><pre>' +
+          escapeHtml(tech) +
+          '</pre></details>';
+      }
+      resultBox.innerHTML = html;
+      resultBox.className = 'result visible result-error';
+      resultBox.focus();
+      if (formError) {
+        formError.textContent = title + (reasons[0] && reasons[0].text ? ' — ' + reasons[0].text : '');
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
     function clearPhoto() {
       revokeObjectUrl(currentObjectUrl);
       currentObjectUrl = null;
@@ -893,6 +938,15 @@
                 code === 'CONSENT_VERSION_MISMATCH'
               ) {
                 clearAllConsent();
+              }
+              if (
+                code === 'QC_FAIL' ||
+                code === 'QC_HTTP_ERROR' ||
+                code === 'QC_SHAPE_UNKNOWN' ||
+                (pack.data && Array.isArray(pack.data.reasons) && pack.data.reasons.length)
+              ) {
+                showQcFailure(pack.data || {});
+                return;
               }
               throw new Error(
                 (pack.data && pack.data.error) ||

@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09f
+FaceMe update pack v2026-11-09g
 ===============================
 DO NOT overwrite: .env
 
@@ -17,16 +17,19 @@ REQUIRED:
 - server/index.js
 - server/tls-options.js
 - server/env-file.js
-- server/load-dotenv.js          (new — last-wins, BOM/trim/quotes, diagnostics)
+- server/load-dotenv.js
 - server/local-admin.js
 - server/routes/api.js
 - server/middleware/cors.js
+- server/middleware/errors.js
 - server/central/client.js
+- server/central/adapters.js
+- server/central/qc-explain.js     (new — ZH QC reasons + masking)
+- server/fixtures/**
 - package.json
 - package-lock.json
 
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
-After replace: close ALL old node windows (Task Manager if needed), start.bat, hard-refresh.
-Use 連線設定 →「略過自簽憑證檢查」for local Central self-signed; do not rely on hand-editing .env alone.
-If skipTlsVerify stays false: check env diagnostics on the page (system env override / .env.txt / duplicates).
+After replace: close old node windows, start.bat, hard-refresh.
+QC 失敗時畫面會列出原因與建議；技術細節已遮罩。fail-closed 不變（失敗不匯入）。

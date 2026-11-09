@@ -3,9 +3,13 @@
 function sendError(res, err) {
   const status = err.status || 500;
   const code = err.code || 'INTERNAL';
-  // Never echo upstream bodies, tokens, or passwords
+  // Never echo upstream bodies, tokens, or passwords unless already masked by caller
   const message = err.expose === false ? '伺服器錯誤' : err.message || '伺服器錯誤';
-  res.status(status).json({ error: message, code });
+  const payload = { error: message, code };
+  if (Array.isArray(err.reasons)) payload.reasons = err.reasons;
+  if (err.techDetails != null) payload.techDetails = err.techDetails;
+  if (err.hint) payload.hint = err.hint;
+  res.status(status).json(payload);
 }
 
 function errorHandler(err, req, res, next) {

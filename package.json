@@ -1,6 +1,6 @@
 {
   "name": "faceme-registration-preview",
-  "version": "2026.11.9-f",
+  "version": "2026.11.9-g",
   "description": "FaceMe local Windows one-click preview + thin backend (Central shapes unverified)",
   "main": "server/index.js",
   "directories": {
