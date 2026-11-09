@@ -36,7 +36,7 @@ These fixtures are **fake data** for adapters/tests. Adjust after intranet verif
 - Legacy fixture shapes (`pass` / `success` / `result`) still accepted for older tests
 - **HTTP 200 with unknown body = QC fail (fail closed)** — never treat status alone as pass
 
-### QC failure reason extraction (v2026-11-09h)
+### QC failure reason extraction (v2026-11-09i)
 
 When `condition` is present, **only `false` flags** become Traditional Chinese reasons:
 
@@ -75,7 +75,7 @@ Related FaceOS device docs use `groupId` on person create — polarity of field 
 
 
 
-## QC failure reason extraction (v2026-11-09h)
+## QC failure reason extraction (v2026-11-09i)
 
 Central's exact JSON field names are **not live-verified** here (intranet swagger only).
 Public FaceMe materials mention QC for occlusion / blur / lighting / angle / size / grayscale.
