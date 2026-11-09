@@ -26,13 +26,15 @@ router.get('/health', (req, res) => {
     ok: true,
     appVersion: config.appVersion,
     statementVersion: config.statementVersion,
+    statementEnvIgnored: Boolean(config.statementEnvIgnored),
+    statementEnvWarning: config.statementEnvWarning || null,
     realModeEnabled: config.realModeEnabled,
     realModeFlag: config.realModeFlag,
     legalConfirmed: config.legalConfirmed,
     // Never expose account/password/base secrets beyond "configured?" booleans
     upstreamConfigured: Boolean(config.facemeBaseUrl && config.facemeAccount),
     note:
-      '本機薄後端存活檢查（非 Central 連線測試）。API shape 待內網驗證。同機請用 http://127.0.0.1:PORT/ 。'
+      '本機薄後端存活檢查（非 Central 連線測試）。statementVersion 來自 statement-version.json（與個資聲明全文綁定，不隨 appVersion 變）。'
   });
 });
 

@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09c';
-  var STATEMENT_VERSION = 'v2026-11-09c-draft';
+  var APP_VERSION = 'v2026-11-09d';
+  var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
   var TICKET_EXP_KEY = 'faceme_consent_expires';
@@ -166,6 +166,71 @@
       '帳密只在伺服器 .env。即使選了後端，若未開啟 FACEME_REAL_MODE＋法務確認，註冊仍不會寫入 Central。' +
       '連線失敗<strong>不會</strong>改走 Mock 假成功。可用「連線測試」檢查 Central（≠ health）。';
     el.querySelector('code').textContent = base;
+  }
+
+
+  function updateStatementVersionDisplay() {
+    var nodes = document.querySelectorAll('[data-statement-version]');
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].textContent = STATEMENT_VERSION || '（載入中…）';
+    }
+  }
+
+  function loadStatementVersion() {
+    var url;
+    try {
+      if (isRealMode() && getApiBase()) {
+        url = getApiBase() + '/api/health';
+      } else {
+        url = 'statement-version.json';
+      }
+    } catch (e) {
+      url = 'statement-version.json';
+    }
+    if (typeof fetch !== 'function') {
+      STATEMENT_VERSION = STATEMENT_VERSION || 'privacy-notice-draft-1';
+      updateStatementVersionDisplay();
+      return Promise.resolve(STATEMENT_VERSION);
+    }
+    return fetch(url, { credentials: 'same-origin' })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          return { res: res, data: data };
+        });
+      })
+      .then(function (pack) {
+        if (!pack.res.ok || !pack.data || !pack.data.statementVersion) {
+          throw new Error('無法取得聲明版本');
+        }
+        STATEMENT_VERSION = pack.data.statementVersion;
+        updateStatementVersionDisplay();
+        if (pack.data.statementEnvWarning) {
+          console.warn(pack.data.statementEnvWarning);
+        }
+        return STATEMENT_VERSION;
+      })
+      .catch(function () {
+        // Fallback: static file if health failed
+        if (url.indexOf('statement-version.json') !== -1) {
+          STATEMENT_VERSION = STATEMENT_VERSION || 'privacy-notice-draft-1';
+          updateStatementVersionDisplay();
+          return STATEMENT_VERSION;
+        }
+        return fetch('statement-version.json')
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (data) {
+            STATEMENT_VERSION = (data && data.statementVersion) || 'privacy-notice-draft-1';
+            updateStatementVersionDisplay();
+            return STATEMENT_VERSION;
+          })
+          .catch(function () {
+            STATEMENT_VERSION = 'privacy-notice-draft-1';
+            updateStatementVersionDisplay();
+            return STATEMENT_VERSION;
+          });
+      });
   }
 
   function isLocalLoopbackPage() {
@@ -413,6 +478,7 @@
         input.value = origin;
         updateModeBanner(banner);
         flash('已設定本機同源薄後端：' + origin, false);
+        loadStatementVersion();
       });
     }
     if (connBtn) {
@@ -435,6 +501,7 @@
 
   function initConsentPage() {
     initApiBasePanel();
+    loadStatementVersion();
     var checkbox = document.getElementById('consent-check');
     var submitBtn = document.getElementById('consent-submit');
     var form = document.getElementById('consent-form');
@@ -464,6 +531,11 @@
       if (!base) {
         setMockConsent();
         navigateTo('register.html', false);
+        return;
+      }
+
+      if (!STATEMENT_VERSION) {
+        setErr('聲明版本尚未載入，請稍候再按一次，或重新整理頁面。');
         return;
       }
 
@@ -537,6 +609,7 @@
 
   function initRegisterPage() {
     initApiBasePanel();
+    loadStatementVersion();
     if (!guardRegisterPage()) return;
 
     var form = document.getElementById('register-form');
@@ -754,7 +827,8 @@
 
   window.FaceMePreview = {
     APP_VERSION: APP_VERSION,
-    STATEMENT_VERSION: STATEMENT_VERSION,
+    get STATEMENT_VERSION() { return STATEMENT_VERSION; },
+    loadStatementVersion: loadStatementVersion,
     CONSENT_KEY: CONSENT_KEY,
     TICKET_KEY: TICKET_KEY,
     API_BASE_LS_KEY: API_BASE_LS_KEY,

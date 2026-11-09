@@ -55,6 +55,9 @@ function start() {
       '[warn] FACEME_REAL_MODE=1 但 FACEME_STATEMENT_LEGAL_CONFIRMED≠1：真實寫入仍停用。'
     );
   }
+  if (config.statementEnvWarning) {
+    console.warn('[warn] ' + config.statementEnvWarning);
+  }
   const app = createApp();
   const server = app.listen(config.port, config.host, () => {
     console.log(

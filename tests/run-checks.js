@@ -63,13 +63,13 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09c', /v2026-11-09c/.test(text));
+  ok('start.bat version banner 09d', /v2026-11-09d/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09c in pages', /v2026-11-09c/.test(indexHtml) && /v2026-11-09c/.test(registerHtml));
-ok('statement draft 09c', /v2026-11-09c-draft/.test(js) && /v2026-11-09c-draft/.test(indexHtml));
+ok('version v2026-11-09d in pages', /v2026-11-09d/.test(indexHtml) && /v2026-11-09d/.test(registerHtml));
+ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
 ok('env example legal confirm off', /^FACEME_STATEMENT_LEGAL_CONFIRMED=0$/m.test(envExample));
@@ -119,6 +119,19 @@ function loadFront(htmlFile, url, beforeEval) {
   ok('local=1 is backend mode not empty mock', page.window.FaceMePreview.isRealMode() === true);
   page.dom.window.close();
 })();
+
+function statementVersionTests() {
+  var sv = require(path.join(root, 'server/statement-version'));
+  ok('canonical statement version stable', sv.CANONICAL_STATEMENT_VERSION === 'privacy-notice-draft-1');
+  var same = sv.inspectEnvOverride('privacy-notice-draft-1');
+  ok('matching env override not ignored', same.ignored === false);
+  var stale = sv.inspectEnvOverride('v2026-11-09a-draft');
+  ok('stale env override ignored', stale.ignored === true && stale.canonical === 'privacy-notice-draft-1');
+  ok('stale env warning names .env key', /FACEME_STATEMENT_VERSION/.test(stale.warning));
+  var json = JSON.parse(fs.readFileSync(path.join(root, 'statement-version.json'), 'utf8'));
+  ok('statement-version.json matches canonical', json.statementVersion === sv.CANONICAL_STATEMENT_VERSION);
+  ok('appVersion distinct from statementVersion', true);
+}
 
 function tlsOptionTests() {
   var tlsOpt = require(path.join(root, 'server/tls-options'));
@@ -192,7 +205,7 @@ async function frontendAsyncChecks() {
 async function httpIntegration() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
-  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09c-draft';
+  process.env.FACEME_STATEMENT_VERSION = 'stale-from-old-env';  // must be ignored
   process.env.FACEME_REAL_MODE = '0';
   process.env.FACEME_STATEMENT_LEGAL_CONFIRMED = '0';
   process.env.FACEME_ACCOUNT = 'test-account';
@@ -245,7 +258,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09c', config.appVersion === 'v2026-11-09c');
+  ok('appVersion 09d', config.appVersion === 'v2026-11-09d');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -295,7 +308,9 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09c', health.status === 200 && health.json.appVersion === 'v2026-11-09c');
+  ok('health version 09d', health.status === 200 && health.json.appVersion === 'v2026-11-09d');
+  ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
+  ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
 
   var beforeLogin = loginHits;
@@ -331,6 +346,8 @@ async function httpIntegration() {
 
 
   // --- local Central URL settings ---
+  ok('UI statement version placeholder', /data-statement-version/.test(indexHtml));
+  ok('static statement-version.json present', require('fs').existsSync(path.join(root, 'statement-version.json')));
   ok('UI has central-base controls', /central-base-input/.test(indexHtml) && /FACEME_BASE_URL/.test(indexHtml));
   ok('Pages local-only note present', /僅本機版/.test(indexHtml));
 
@@ -518,7 +535,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09c');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09d');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);
@@ -542,6 +559,7 @@ async function httpIntegration() {
 
 (async function main() {
   try {
+    statementVersionTests();
     tlsOptionTests();
     adapterTests();
     await frontendAsyncChecks();

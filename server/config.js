@@ -36,8 +36,13 @@ function int(name, defaultValue) {
   return Number.isFinite(n) ? n : defaultValue;
 }
 
-const STATEMENT_VERSION =
-  process.env.FACEME_STATEMENT_VERSION || 'v2026-11-09c-draft';
+const {
+  CANONICAL_STATEMENT_VERSION,
+  inspectEnvOverride
+} = require('./statement-version');
+
+const statementEnvInfo = inspectEnvOverride(process.env.FACEME_STATEMENT_VERSION);
+const STATEMENT_VERSION = statementEnvInfo.canonical;
 
 const realModeFlag = bool('FACEME_REAL_MODE', false);
 const legalConfirmed = bool('FACEME_STATEMENT_LEGAL_CONFIRMED', false);
@@ -52,6 +57,9 @@ const config = {
   host: process.env.HOST || '127.0.0.1',
   port: int('PORT', 8443),
   statementVersion: STATEMENT_VERSION,
+  statementEnvIgnored: statementEnvInfo.ignored,
+  statementEnvValue: statementEnvInfo.envValue,
+  statementEnvWarning: statementEnvInfo.warning,
   realModeFlag,
   legalConfirmed,
   realModeEnabled,
@@ -69,7 +77,7 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-09c'
+  appVersion: 'v2026-11-09d'
 };
 
 function assertRealModeReady() {
@@ -107,5 +115,5 @@ function setFacemeBaseUrl(normalized) {
   process.env.FACEME_BASE_URL = url;
 }
 
-module.exports = { config, assertRealModeReady, loadDotEnv, setFacemeBaseUrl };
+module.exports = { config, assertRealModeReady, loadDotEnv, setFacemeBaseUrl, statementEnvInfo };
 

@@ -29,9 +29,23 @@ function appendAudit(event, fields) {
 
 function issueTicket(statementVersion) {
   if (statementVersion !== config.statementVersion) {
-    const err = new Error('聲明版本不符');
+    const err = new Error(
+      '聲明版本不符：前端送來「' +
+        statementVersion +
+        '」，伺服器要求「' +
+        config.statementVersion +
+        '」。' +
+        (config.statementEnvIgnored
+          ? '（已忽略 .env 的 FACEME_STATEMENT_VERSION=' +
+            config.statementEnvValue +
+            '）'
+          : '') +
+        '請重新整理頁面後再試；若仍不符，確認已更新到同一版程式。'
+    );
     err.code = 'STATEMENT_MISMATCH';
     err.status = 400;
+    err.clientVersion = statementVersion;
+    err.serverVersion = config.statementVersion;
     throw err;
   }
   const ticketId = crypto.randomBytes(32).toString('hex');
