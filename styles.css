@@ -486,3 +486,9 @@ textarea:focus-visible,
 .conn-result:not([hidden]) {
   display: block;
 }
+
+.settings-sub {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.95rem;
+  color: var(--brand);
+}

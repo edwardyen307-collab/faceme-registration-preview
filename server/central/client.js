@@ -27,9 +27,14 @@ function getAgent() {
 
 function resetAgentForTests() {
   if (agent) {
-    agent.close();
+    try { agent.close(); } catch (_) {}
     agent = null;
   }
+}
+
+/** Call after FACEME_BASE_URL changes so next request uses new target / TLS settings. */
+function resetUpstreamAgent() {
+  resetAgentForTests();
 }
 
 function blobPart(buffer, mime) {
@@ -333,5 +338,6 @@ module.exports = {
   upstream,
   connectionProbe,
   resetAgentForTests,
+  resetUpstreamAgent,
   getAgent
 };

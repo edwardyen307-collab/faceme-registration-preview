@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09a</title>
+  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09b</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="consent">
@@ -14,19 +14,20 @@
         <h1>人臉資料蒐集個資聲明</h1>
         <p>FaceMe 註冊前同意流程（靜態預覽）</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09a</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09b</span>
     </div>
   </header>
 
   <main>
     <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
     <section class="card settings-card" aria-labelledby="api-settings-heading">
-      <h2 id="api-settings-heading">後端 API 設定（選用）</h2>
+      <h2 id="api-settings-heading">連線設定</h2>
+      <p class="hint">① 與 ② 是不同位址：① 是瀏覽器連到薄後端；② 是薄後端連到 FaceMe Central。</p>
+      <h3 class="settings-sub">① 瀏覽器 → 薄後端（API base）</h3>
       <p class="hint">
-        僅儲存非機密的 API base 位址於瀏覽器 localStorage。帳密只存在內網伺服器 <code>.env</code>。
-        本機一鍵啟動請開 <code>http://127.0.0.1:8443/?local=1</code>（會自動選本機薄後端）。留空＝Mock。GitHub Pages 無法打本機／Central。
+        存在瀏覽器 localStorage。本機請開 <code>http://127.0.0.1:8443/?local=1</code>；留空＝Mock。GitHub Pages 無法打本機／Central。
       </p>
-      <label for="api-base-input">API base（例如 <code>https://faceme-proxy.intranet</code>）</label>
+      <label for="api-base-input">薄後端 API base</label>
       <div class="api-row">
         <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
         <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
@@ -39,6 +40,19 @@
       </div>
       <pre class="conn-result" id="conn-test-result" aria-live="polite" hidden></pre>
       <div class="api-status" id="api-base-status" aria-live="polite"></div>
+
+      <h3 class="settings-sub">② 薄後端 → FaceMe Central（FACEME_BASE_URL）</h3>
+      <p class="hint" id="central-base-hint">
+        寫入伺服器 <code>.env</code> 的 Central 位址（僅 https://主機或IP[:埠]）。帳密仍只在 .env，網頁<strong>不會</strong>顯示或讀取密碼。
+      </p>
+      <div id="central-base-local-only" class="preview-note" hidden>此區塊僅本機版（127.0.0.1）可用；GitHub Pages 無法修改 Central。</div>
+      <label for="central-base-input">Central 位址</label>
+      <div class="api-row">
+        <input type="url" id="central-base-input" placeholder="https://127.0.0.1 或 https://主機:埠" autocomplete="off" spellcheck="false" disabled />
+        <button type="button" class="btn btn-secondary" id="central-base-save" disabled>儲存 Central 位址</button>
+        <button type="button" class="btn btn-secondary" id="central-base-reload" disabled>重新載入</button>
+      </div>
+      <div class="api-status" id="central-base-status" aria-live="polite"></div>
     </section>
     <section class="card" aria-labelledby="notice-heading">
       <div class="draft-banner" role="status">
@@ -141,14 +155,14 @@
               確認送出
             </button>
           </form>
-          <p class="hint" style="margin:0.5rem 0 0">聲明版本（送後端核對）：<code>v2026-11-09a-draft</code></p>
+          <p class="hint" style="margin:0.5rem 0 0">聲明版本（送後端核對）：<code>v2026-11-09b-draft</code></p>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09a
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09b
   </footer>
   <script src="app.js"></script>
 </body>

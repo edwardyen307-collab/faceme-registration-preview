@@ -1,8 +1,8 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09a';
-  var STATEMENT_VERSION = 'v2026-11-09a-draft';
+  var APP_VERSION = 'v2026-11-09b';
+  var STATEMENT_VERSION = 'v2026-11-09b-draft';
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
   var TICKET_EXP_KEY = 'faceme_consent_expires';
@@ -239,6 +239,126 @@
       });
   }
 
+  var localAdminToken = null;
+
+  function isPagesHost() {
+    try {
+      return /github\.io$/i.test(location.hostname);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function loadCentralSettingsUi() {
+    var input = document.getElementById('central-base-input');
+    var saveBtn = document.getElementById('central-base-save');
+    var reloadBtn = document.getElementById('central-base-reload');
+    var status = document.getElementById('central-base-status');
+    var only = document.getElementById('central-base-local-only');
+    if (!input) return;
+
+    function flashC(msg, isError) {
+      if (!status) return;
+      status.textContent = msg || '';
+      status.className = 'api-status' + (isError ? ' error' : '');
+    }
+
+    function setEnabled(on) {
+      input.disabled = !on;
+      if (saveBtn) saveBtn.disabled = !on;
+      if (reloadBtn) reloadBtn.disabled = !on;
+      if (only) only.hidden = !!on;
+    }
+
+    if (!isLocalLoopbackPage() || isPagesHost()) {
+      setEnabled(false);
+      if (only) {
+        only.hidden = false;
+        only.textContent = '此區塊僅本機版（http://127.0.0.1:…）可用；GitHub Pages 無法修改 Central。';
+      }
+      return;
+    }
+
+    function fetchSettings() {
+      if (typeof fetch !== 'function') {
+        flashC('此環境不支援 fetch，無法載入 Central 設定。', true);
+        return;
+      }
+      var base = getApiBase() || location.origin;
+      return fetch(base + '/api/local-settings', { method: 'GET', credentials: 'same-origin' })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { res: res, data: data };
+          });
+        })
+        .then(function (pack) {
+          if (!pack.res.ok) {
+            setEnabled(false);
+            flashC((pack.data && pack.data.error) || '無法載入本機 Central 設定', true);
+            return;
+          }
+          localAdminToken = pack.data.localAdminToken || null;
+          input.value = pack.data.centralBaseUrl || '';
+          setEnabled(true);
+          flashC('已載入伺服器 FACEME_BASE_URL（不含帳密）。', false);
+        })
+        .catch(function (e) {
+          setEnabled(false);
+          flashC('無法連線薄後端以載入 Central 設定：' + ((e && e.message) || e), true);
+        });
+    }
+
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', function () {
+        fetchSettings();
+      });
+    }
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        var base = getApiBase() || location.origin;
+        if (!localAdminToken) {
+          flashC('尚未取得本機管理 token，請先重新載入。', true);
+          return;
+        }
+        flashC('儲存中…', false);
+        if (typeof fetch !== 'function') {
+          flashC('此環境不支援 fetch。', true);
+          return;
+        }
+        fetch(base + '/api/local-settings/central-base', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Faceme-Local-Token': localAdminToken
+          },
+          body: JSON.stringify({ centralBaseUrl: input.value })
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data };
+            });
+          })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              flashC((pack.data && pack.data.error) || '儲存失敗', true);
+              return;
+            }
+            input.value = pack.data.centralBaseUrl || input.value;
+            flashC(
+              '已儲存並立即生效（已備份 .env.bak）。請用「連線測試」驗證。帳密未透過網頁讀取。',
+              false
+            );
+          })
+          .catch(function (e) {
+            flashC('儲存失敗：' + ((e && e.message) || e), true);
+          });
+      });
+    }
+
+    fetchSettings();
+  }
+
   function initApiBasePanel() {
     var input = document.getElementById('api-base-input');
     var saveBtn = document.getElementById('api-base-save');
@@ -309,6 +429,8 @@
         runConnectionTest(true);
       });
     }
+
+    loadCentralSettingsUi();
   }
 
   function initConsentPage() {
@@ -655,7 +777,9 @@
     updateModeBanner: updateModeBanner,
     applyLocalOneClickDefaults: applyLocalOneClickDefaults,
     isLocalLoopbackPage: isLocalLoopbackPage,
-    runConnectionTest: runConnectionTest
+    runConnectionTest: runConnectionTest,
+    loadCentralSettingsUi: loadCentralSettingsUi,
+    isPagesHost: isPagesHost
   };
 
   document.addEventListener('DOMContentLoaded', function () {

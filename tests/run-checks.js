@@ -63,13 +63,13 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09a', /v2026-11-09a/.test(text));
+  ok('start.bat version banner 09b', /v2026-11-09b/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09a in pages', /v2026-11-09a/.test(indexHtml) && /v2026-11-09a/.test(registerHtml));
-ok('statement draft 09a', /v2026-11-09a-draft/.test(js) && /v2026-11-09a-draft/.test(indexHtml));
+ok('version v2026-11-09b in pages', /v2026-11-09b/.test(indexHtml) && /v2026-11-09b/.test(registerHtml));
+ok('statement draft 09b', /v2026-11-09b-draft/.test(js) && /v2026-11-09b-draft/.test(indexHtml));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
 ok('env example legal confirm off', /^FACEME_STATEMENT_LEGAL_CONFIRMED=0$/m.test(envExample));
@@ -159,7 +159,7 @@ async function frontendAsyncChecks() {
 async function httpIntegration() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
-  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09a-draft';
+  process.env.FACEME_STATEMENT_VERSION = 'v2026-11-09b-draft';
   process.env.FACEME_REAL_MODE = '0';
   process.env.FACEME_STATEMENT_LEGAL_CONFIRMED = '0';
   process.env.FACEME_ACCOUNT = 'test-account';
@@ -212,7 +212,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09a', config.appVersion === 'v2026-11-09a');
+  ok('appVersion 09b', config.appVersion === 'v2026-11-09b');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -262,7 +262,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09a', health.status === 200 && health.json.appVersion === 'v2026-11-09a');
+  ok('health version 09b', health.status === 200 && health.json.appVersion === 'v2026-11-09b');
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
 
   var beforeLogin = loginHits;
@@ -288,9 +288,196 @@ async function httpIntegration() {
   // multipart empty may 400/503 — assert not 200 success write
   ok('register not success while real mode off', reg.status !== 200);
 
+
+  // --- local Central URL settings ---
+  ok('UI has central-base controls', /central-base-input/.test(indexHtml) && /FACEME_BASE_URL/.test(indexHtml));
+  ok('Pages local-only note present', /僅本機版/.test(indexHtml));
+
+  var envFile = require(path.join(root, 'server/env-file'));
+  ok('reject http central url', envFile.validateCentralBaseUrl('http://127.0.0.1').ok === false);
+  ok('reject path', envFile.validateCentralBaseUrl('https://127.0.0.1/api').ok === false);
+  ok('reject userinfo', envFile.validateCentralBaseUrl('https://u:p@127.0.0.1').ok === false);
+  ok('accept https host port', envFile.validateCentralBaseUrl('https://192.168.32.220:443').ok === true);
+
+  var localAdmin = require(path.join(root, 'server/local-admin'));
+  try {
+    localAdmin.assertLocalAdmin(
+      {
+        socket: { remoteAddress: '8.8.8.8' },
+        headers: { host: '127.0.0.1:8443' },
+        method: 'GET'
+      },
+      { mutate: false }
+    );
+    ok('non-loopback remote rejected', false);
+  } catch (e) {
+    ok('non-loopback remote rejected', e.code === 'NOT_LOOPBACK');
+  }
+  try {
+    localAdmin.assertLocalAdmin(
+      {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: { host: 'evil.example', origin: 'http://127.0.0.1:8443' },
+        method: 'GET'
+      },
+      { mutate: false }
+    );
+    ok('bad Host rejected', false);
+  } catch (e) {
+    ok('bad Host rejected', e.code === 'BAD_HOST');
+  }
+  try {
+    localAdmin.assertLocalAdmin(
+      {
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: {
+          host: '127.0.0.1:' + port,
+          origin: 'https://evil.example'
+        },
+        method: 'PUT'
+      },
+      { mutate: true }
+    );
+    ok('cross-site Origin rejected', false);
+  } catch (e) {
+    ok('cross-site Origin rejected', e.code === 'BAD_ORIGIN');
+  }
+
+  // GET local-settings from loopback without Origin
+  var ls = await req('GET', '/api/local-settings');
+  ok('local-settings ok on loopback', ls.status === 200 && ls.json.localAdmin === true);
+  ok('local-settings returns token not password', ls.json.localAdminToken && !/FACEME_PASSWORD|test-password/.test(ls.text));
+  var adminTok = ls.json.localAdminToken;
+
+  // PUT without token
+  var noTok = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'https://127.0.0.1' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  ok('PUT without token rejected', noTok.status === 403 && noTok.json.code === 'BAD_TOKEN');
+
+  // Preserve other .env lines including password when upserting
+  var fs = require('fs');
+  var envPath = path.join(root, '.env');
+  var prevEnv = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : null;
+  fs.writeFileSync(
+    envPath,
+    'FACEME_ACCOUNT=keep-me\nFACEME_PASSWORD=secret-should-remain\nFACEME_BASE_URL=https://old.example\nOTHER=1\n',
+    'utf8'
+  );
+  var putOk = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'https://192.168.32.220' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port,
+          'X-Faceme-Local-Token': adminTok,
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json, text: text });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  ok('PUT central-base success', putOk.status === 200 && putOk.json.centralBaseUrl === 'https://192.168.32.220');
+  ok('PUT applied immediate', putOk.json.applied === 'immediate');
+  var envAfter = fs.readFileSync(envPath, 'utf8');
+  ok('env password line preserved', /FACEME_PASSWORD=secret-should-remain/.test(envAfter));
+  ok('env account preserved', /FACEME_ACCOUNT=keep-me/.test(envAfter));
+  ok('env OTHER preserved', /OTHER=1/.test(envAfter));
+  ok('env base updated', /FACEME_BASE_URL=https:\/\/192\.168\.32\.220/.test(envAfter));
+  ok('env.bak created', fs.existsSync(path.join(root, '.env.bak')));
+  // runtime config should match
+  var { config: cfgNow } = require(path.join(root, 'server/config'));
+  ok('config.facemeBaseUrl updated live', cfgNow.facemeBaseUrl === 'https://192.168.32.220');
+  // restore previous test env if any
+  if (prevEnv != null) fs.writeFileSync(envPath, prevEnv, 'utf8');
+  else {
+    try { fs.unlinkSync(envPath); } catch (_) {}
+  }
+
+  // reject bad format via API
+  var badPut = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'http://127.0.0.1' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port,
+          'X-Faceme-Local-Token': adminTok,
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  ok('PUT rejects non-https', badPut.status === 400);
+
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09a');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09b');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

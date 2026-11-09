@@ -11,3 +11,4 @@ runtime/
 *.crt
 tmp/
 uploads/
+.env.bak

@@ -1,23 +1,33 @@
-FaceMe fix pack v2026-11-09a
-============================
-DO NOT overwrite: .env  (keep your passwords)
-DO NOT need to delete: node_modules (optional; launcher may npm ci)
+FaceMe update pack v2026-11-09b
+===============================
+DO NOT overwrite: .env  (keep passwords / your FACEME_BASE_URL edits)
+Optional keep: node_modules (launcher may npm ci)
 
-Overwrite / replace these files inside your existing unzipped project folder
-(the folder that already contains package.json and your .env):
+Replace these files in your existing unzipped project folder:
 
-1) start.bat                         (REQUIRED - fixes flash-close)
-2) scripts/windows-launcher.js       (REQUIRED - logging, cleanup, version)
-3) setup-and-start.ps1               (optional)
-4) README.md                         (optional; from full repo ZIP if desired)
+REQUIRED
+- start.bat
+- scripts/windows-launcher.js
+- app.js
+- index.html
+- register.html
+- styles.css
+- server/config.js
+- server/env-file.js          (new)
+- server/local-admin.js       (new)
+- server/routes/api.js
+- server/middleware/cors.js
+- server/central/client.js
+- package.json
+- package-lock.json
 
-Also recommended when updating the whole app from repo ZIP (same folder merge):
-- app.js, index.html, register.html, styles.css
-- server/** (config appVersion etc.)
-- package.json, package-lock.json
-- .env.example (does not overwrite .env)
-- tests/** (optional)
+OPTIONAL
+- setup-and-start.ps1
+- README.md
+- .env.example                (does not overwrite .env)
+- tests/**
+- docs/**
 
-After replace: close old black windows, double-click start.bat.
-Local URL: http://127.0.0.1:8443/?local=1
-Logs: runtime\bat-boot.log , runtime\launcher.log (no passwords)
+After replace: close old windows, double-click start.bat.
+Open http://127.0.0.1:8443/?local=1
+Use 連線設定 → ② Central 位址 to edit FACEME_BASE_URL.

@@ -6,6 +6,9 @@ const { config, assertRealModeReady } = require('../config');
 const { issueTicket, consumeTicket } = require('../consent');
 const { validateName, validateEmployeeId, validateImageFile } = require('../validate');
 const central = require('../central/client');
+const { setFacemeBaseUrl } = require('../config');
+const { validateCentralBaseUrl, upsertFacemeBaseUrl } = require('../env-file');
+const { assertLocalAdmin, localAdminToken } = require('../local-admin');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -33,6 +36,50 @@ router.get('/health', (req, res) => {
   });
 });
 
+
+
+router.get('/local-settings', (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: false });
+    res.json({
+      localAdmin: true,
+      appVersion: config.appVersion,
+      centralBaseUrl: config.facemeBaseUrl || '',
+      // Token only returned to loopback callers — used as X-Faceme-Local-Token
+      localAdminToken: localAdminToken,
+      note:
+        '此為伺服器 .env 的 FACEME_BASE_URL（Central）。與瀏覽器「後端 API base」（薄後端位址）不同。不回傳帳密。'
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/local-settings/central-base', express.json({ limit: '4kb' }), (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: true });
+    const raw = req.body && req.body.centralBaseUrl;
+    const v = validateCentralBaseUrl(raw);
+    if (!v.ok) {
+      const err = new Error(v.message);
+      err.code = v.code;
+      err.status = 400;
+      throw err;
+    }
+    const written = upsertFacemeBaseUrl(v.normalized);
+    setFacemeBaseUrl(written.value);
+    central.resetUpstreamAgent();
+    res.json({
+      ok: true,
+      centralBaseUrl: config.facemeBaseUrl,
+      applied: 'immediate',
+      bak: Boolean(written.bak),
+      note: '已寫入 .env 並立即套用（無需重啟）。未讀取或回傳密碼。可用連線測試驗證。'
+    });
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/connection-test', express.json({ limit: '8kb' }), async (req, res, next) => {
   try {

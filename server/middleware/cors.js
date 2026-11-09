@@ -2,19 +2,31 @@
 
 const { config } = require('../config');
 
+function isLoopbackOrigin(origin) {
+  if (!origin) return false;
+  try {
+    const u = new URL(origin);
+    const h = u.hostname.toLowerCase();
+    return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+  } catch (_) {
+    return false;
+  }
+}
+
 function corsMiddleware(req, res, next) {
   const origin = req.headers.origin;
   if (!origin) {
-    // Same-origin / non-browser
     return next();
   }
-  if (config.corsOrigins.includes(origin)) {
+  const allowed =
+    config.corsOrigins.includes(origin) || isLoopbackOrigin(origin);
+  if (allowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization'
+      'Content-Type, Authorization, X-Faceme-Local-Token'
     );
     res.setHeader('Access-Control-Max-Age', '600');
     if (req.method === 'OPTIONS') {
@@ -22,16 +34,13 @@ function corsMiddleware(req, res, next) {
     }
     return next();
   }
-  // Different origin not in allowlist: no ACAO; block preflight
   if (req.method === 'OPTIONS') {
     return res.status(403).json({ error: 'CORS origin not allowed', code: 'CORS_DENIED' });
   }
-  // For actual requests from disallowed origins, still process but browser will block reading.
-  // Prefer explicit reject for API paths:
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'CORS origin not allowed', code: 'CORS_DENIED' });
   }
   return next();
 }
 
-module.exports = { corsMiddleware };
+module.exports = { corsMiddleware, isLoopbackOrigin };
