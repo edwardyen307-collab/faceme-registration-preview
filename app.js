@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09e';
+  var APP_VERSION = 'v2026-11-09f';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -320,6 +320,11 @@
     var reloadBtn = document.getElementById('central-base-reload');
     var status = document.getElementById('central-base-status');
     var only = document.getElementById('central-base-local-only');
+    var skipRow = document.getElementById('skip-tls-row');
+    var skipToggle = document.getElementById('skip-tls-toggle');
+    var skipStatus = document.getElementById('skip-tls-status');
+    var skipHint = document.getElementById('skip-tls-hint');
+    var envDiag = document.getElementById('env-diag-result');
     if (!input) return;
 
     function flashC(msg, isError) {
@@ -328,11 +333,51 @@
       status.className = 'api-status' + (isError ? ' error' : '');
     }
 
+    function flashSkip(msg, isError) {
+      if (!skipStatus) return;
+      skipStatus.textContent = msg || '';
+      skipStatus.className = 'api-status' + (isError ? ' error' : '');
+    }
+
     function setEnabled(on) {
       input.disabled = !on;
       if (saveBtn) saveBtn.disabled = !on;
       if (reloadBtn) reloadBtn.disabled = !on;
       if (only) only.hidden = !!on;
+      if (skipRow) skipRow.hidden = !on;
+    }
+
+    function applySkipUi(data) {
+      if (!skipToggle) return;
+      var can = !!(data && data.canEnableSkipTlsVerify);
+      var on = !!(data && data.skipTlsVerify);
+      skipToggle.checked = on;
+      skipToggle.disabled = !can && !on;
+      if (!can) {
+        skipToggle.disabled = true;
+        if (skipHint) {
+          skipHint.textContent =
+            '目前 Central 不是 127.0.0.1／localhost／::1，無法開啟略過自簽憑證。請改成本機位址，或匯入正式 CA。';
+        }
+      } else if (skipHint) {
+        skipHint.textContent =
+          '僅當 Central 是 127.0.0.1／localhost／::1 時可開啟。有中間人風險；正式環境請匯入 CA。寫入 .env 的 FACEME_SKIP_TLS_VERIFY，立即生效。';
+      }
+      if (envDiag && data && data.envDiagnostics) {
+        var d = data.envDiagnostics;
+        var lines = [];
+        lines.push('.env 路徑：' + (d.envPath || '(未知)'));
+        lines.push('找到 .env：' + (d.envFound ? '是' : '否'));
+        lines.push('存在 .env.txt：' + (d.envTxtFound ? '是（請確認是否改錯檔）' : '否'));
+        var dups = d.duplicateKeys || {};
+        var dk = Object.keys(dups);
+        lines.push('同名鍵重複：' + (dk.length ? dk.map(function (k) { return k + '×' + dups[k]; }).join(', ') : '無'));
+        var sys = d.systemOwnedKeys || [];
+        lines.push('系統環境變數覆寫：' + (sys.length ? sys.join(', ') : '無'));
+        (d.warnings || []).forEach(function (w) { lines.push('警告：' + w); });
+        envDiag.hidden = false;
+        envDiag.textContent = lines.join('\n');
+      }
     }
 
     if (!isLocalLoopbackPage() || isPagesHost()) {
@@ -365,6 +410,7 @@
           localAdminToken = pack.data.localAdminToken || null;
           input.value = pack.data.centralBaseUrl || '';
           setEnabled(true);
+          applySkipUi(pack.data);
           flashC('已載入伺服器 FACEME_BASE_URL（不含帳密）。', false);
         })
         .catch(function (e) {
@@ -410,13 +456,61 @@
               return;
             }
             input.value = pack.data.centralBaseUrl || input.value;
-            flashC(
-              '已儲存並立即生效（已備份 .env.bak）。請用「連線測試」驗證。帳密未透過網頁讀取。',
-              false
-            );
+            var msg =
+              '已儲存並立即生效（已備份 .env.bak）。請用「連線測試」驗證。帳密未透過網頁讀取。';
+            if (pack.data.skipTlsAutoDisabled) {
+              msg =
+                '已更新 Central。因新位址不是本機 loopback，已自動關閉「略過自簽憑證」並寫回 .env。';
+              if (skipToggle) skipToggle.checked = false;
+            }
+            applySkipUi({
+              skipTlsVerify: pack.data.skipTlsVerify,
+              canEnableSkipTlsVerify: /127\.0\.0\.1|localhost|::1/i.test(input.value || '')
+            });
+            flashC(msg, false);
           })
           .catch(function (e) {
             flashC('儲存失敗：' + ((e && e.message) || e), true);
+          });
+      });
+    }
+
+    if (skipToggle) {
+      skipToggle.addEventListener('change', function () {
+        var base = getApiBase() || location.origin;
+        if (!localAdminToken) {
+          flashSkip('尚未取得本機管理 token，請先重新載入。', true);
+          skipToggle.checked = !skipToggle.checked;
+          return;
+        }
+        var want = !!skipToggle.checked;
+        flashSkip(want ? '開啟略過中…' : '關閉略過中…', false);
+        fetch(base + '/api/local-settings/skip-tls-verify', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Faceme-Local-Token': localAdminToken
+          },
+          body: JSON.stringify({ enabled: want })
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data };
+            });
+          })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              skipToggle.checked = !want;
+              flashSkip((pack.data && pack.data.error) || '更新失敗', true);
+              return;
+            }
+            skipToggle.checked = !!pack.data.skipTlsVerify;
+            flashSkip(pack.data.note || '已更新', false);
+          })
+          .catch(function (e) {
+            skipToggle.checked = !want;
+            flashSkip('更新失敗：' + ((e && e.message) || e), true);
           });
       });
     }

@@ -492,3 +492,14 @@ textarea:focus-visible,
   font-size: 0.95rem;
   color: var(--brand);
 }
+
+.skip-tls-row {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.skip-tls-row .hint {
+  margin: 0.35rem 0 0;
+}

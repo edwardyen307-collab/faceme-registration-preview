@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09e**
+版本：**v2026-11-09f**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09e.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09f.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -61,7 +61,7 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 
 可選：`setup-and-start.ps1` 同樣只呼叫上述 Node 腳本，**不** Bypass。ZIP 的 Mark of the Web 請用「解除鎖定」，或直接用 `start.bat`。
 
-## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09e）
+## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09f）
 
 錯誤會展開底層原因。常見：
 - **ECONNREFUSED**：該 IP／埠沒有服務（`https://127.0.0.1`＝443 埠；Central 若在別的埠請寫 `:埠號`）
@@ -69,14 +69,24 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 - **EPROTO**：http／https 弄反
 詳見畫面訊息與 `runtime/upstream.log`。
 
-## 「聲明版本不符」怎麼辦（v2026-11-09e）
+## 「聲明版本不符」怎麼辦（v2026-11-09f）
 
 原因多半是：舊 `.env` 裡有 `FACEME_STATEMENT_VERSION=…`（建立 .env 時從舊 example 帶入），而網頁已更新。  
 現在程式以 `statement-version.json` 為準，**會忽略 .env 裡不同的覆寫值**（不自動改你的 .env）。建議刪除或註解該行後重開 `start.bat`，並重新整理瀏覽器。
 
-## TLS 與 IP 位址（v2026-11-09e）
+## TLS 與 IP 位址（v2026-11-09f）
 
 連線 `https://127.0.0.1`（或其它 IP）時**不會**再設定非法的 TLS `servername`（Node 禁止 SNI 為 IP）。憑證驗證預設仍開啟；若出現「憑證不被信任／名稱不符」，請改用憑證 SAN 上的主機名、匯入 CA，或僅在明白風險時設 `FACEME_SKIP_TLS_VERIFY=1`（不會自動略過）。
+
+## 略過自簽憑證（v2026-11-09f）
+
+本機版連線設定區有開關「**略過自簽憑證檢查（僅限本機 Central）**」。
+
+- 僅當 `FACEME_BASE_URL` 主機是 `127.0.0.1`／`localhost`／`::1` 時可開啟；否則 API 拒絕並說明原因。
+- 開關會寫入 `.env` 的 `FACEME_SKIP_TLS_VERIFY`（替換同名重複行、備份 `.env.bak`），並立即重建 upstream Agent；連線測試回傳的 `skipTlsVerify` 會反映新值。
+- 若之後把 Central 改成非本機位址，會自動關閉略過並寫回 `.env`。
+- `.env` 載入改為**後出現的同名鍵覆寫**；啟動與 `/api/local-settings` 會顯示診斷（路徑、是否找到、重複鍵次數、是否被系統環境變數覆蓋、是否存在 `.env.txt`），不輸出秘密值。若系統環境變數蓋掉 `.env`，請到 Windows「系統內容 → 進階 → 環境變數」移除 `FACEME_SKIP_TLS_VERIFY`。
+
 
 ## 在網頁修改 Central 位址（本機）
 

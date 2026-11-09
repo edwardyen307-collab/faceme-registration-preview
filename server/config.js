@@ -1,34 +1,15 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
+const { loadDotEnv } = require('./load-dotenv');
+const { centralHostIsLoopback } = require('./env-file');
 
-function loadDotEnv(filePath) {
-  if (!fs.existsSync(filePath)) return;
-  const text = fs.readFileSync(filePath, 'utf8');
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq <= 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let val = trimmed.slice(eq + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
-    if (process.env[key] === undefined) process.env[key] = val;
-  }
-}
-
-loadDotEnv(path.join(__dirname, '..', '.env'));
+const envDiagnostics = loadDotEnv(path.join(__dirname, '..', '.env'));
 
 function bool(name, defaultValue) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return defaultValue;
-  return raw === '1' || /^true$/i.test(raw);
+  return raw === '1' || /^true$/i.test(raw) || /^yes$/i.test(raw);
 }
 
 function int(name, defaultValue) {
@@ -77,8 +58,19 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-09e'
+  appVersion: 'v2026-11-09f',
+  envDiagnostics
 };
+
+// If Central is not loopback, never keep skip TLS on at runtime.
+if (config.skipTlsVerify && !centralHostIsLoopback(config.facemeBaseUrl)) {
+  config.skipTlsVerify = false;
+  process.env.FACEME_SKIP_TLS_VERIFY = '0';
+  envDiagnostics.warnings = envDiagnostics.warnings || [];
+  envDiagnostics.warnings.push(
+    'FACEME_SKIP_TLS_VERIFY 已在記憶體關閉：Central 位址不是 127.0.0.1／localhost／::1。略過憑證僅允許本機 Central。'
+  );
+}
 
 function assertRealModeReady() {
   if (!config.realModeFlag) {
@@ -115,5 +107,23 @@ function setFacemeBaseUrl(normalized) {
   process.env.FACEME_BASE_URL = url;
 }
 
-module.exports = { config, assertRealModeReady, loadDotEnv, setFacemeBaseUrl, statementEnvInfo };
+function setSkipTlsVerify(enabled) {
+  const on = Boolean(enabled);
+  config.skipTlsVerify = on;
+  process.env.FACEME_SKIP_TLS_VERIFY = on ? '1' : '0';
+}
 
+function canEnableSkipTlsVerify(baseUrl) {
+  return centralHostIsLoopback(baseUrl || config.facemeBaseUrl);
+}
+
+module.exports = {
+  config,
+  assertRealModeReady,
+  loadDotEnv,
+  setFacemeBaseUrl,
+  setSkipTlsVerify,
+  canEnableSkipTlsVerify,
+  statementEnvInfo,
+  envDiagnostics
+};

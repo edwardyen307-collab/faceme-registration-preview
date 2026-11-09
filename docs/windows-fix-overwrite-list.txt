@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09e
+FaceMe update pack v2026-11-09f
 ===============================
 DO NOT overwrite: .env
 
@@ -11,12 +11,13 @@ REQUIRED:
 - styles.css
 - statement-version.json
 - server/statement-version.js
-- server/upstream-errors.js      (new — fetch failed diagnostics)
+- server/upstream-errors.js
 - server/config.js
 - server/consent.js
 - server/index.js
 - server/tls-options.js
 - server/env-file.js
+- server/load-dotenv.js          (new — last-wins, BOM/trim/quotes, diagnostics)
 - server/local-admin.js
 - server/routes/api.js
 - server/middleware/cors.js
@@ -26,5 +27,6 @@ REQUIRED:
 
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
-After replace: close old windows, start.bat, hard-refresh.
-If still failing: read the new plain-language error (ECONNREFUSED often means wrong port).
+After replace: close ALL old node windows (Task Manager if needed), start.bat, hard-refresh.
+Use 連線設定 →「略過自簽憑證檢查」for local Central self-signed; do not rely on hand-editing .env alone.
+If skipTlsVerify stays false: check env diagnostics on the page (system env override / .env.txt / duplicates).

@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09e', /v2026-11-09e/.test(text));
+  ok('start.bat version banner 09f', /v2026-11-09f/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09e in pages', /v2026-11-09e/.test(indexHtml) && /v2026-11-09e/.test(registerHtml));
+ok('version v2026-11-09f in pages', /v2026-11-09f/.test(indexHtml) && /v2026-11-09f/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -80,6 +80,11 @@ ok('README three steps + zip URL main', /三步開始/.test(readme) && /archive\
 ok('README says HTTP not HTTPS for local page', /http:\/\/127\.0\.0\.1:8443/.test(readme) && /不是 HTTPS/.test(readme));
 ok('README notes 127.0.0.1 not guaranteed for Central', /不保證/.test(readme) || /NOT guaranteed/i.test(envExample));
 ok('same-origin + conn test UI', /api-base-same-origin/.test(indexHtml) && /btn-conn-test/.test(indexHtml));
+ok('skip-tls toggle in pages', /skip-tls-toggle/.test(indexHtml) && /skip-tls-toggle/.test(registerHtml));
+ok('skip-tls label text', /略過自簽憑證檢查/.test(indexHtml));
+ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
+ok('load-dotenv module exists', fs.existsSync(path.join(root, 'server/load-dotenv.js')));
+
 ok('gitignore .env', /\.env/.test(read('.gitignore')));
 
 var JSDOM = require('jsdom').JSDOM;
@@ -230,6 +235,66 @@ async function frontendAsyncChecks() {
   page.dom.window.close();
 }
 
+
+function loadDotEnvUnitTests() {
+  var ld = require(path.join(root, 'server/load-dotenv'));
+  var ef = require(path.join(root, 'server/env-file'));
+
+  var parsed = ld.parseEnvText('\uFEFFFOO=1\nFOO=2\nBAR=" x "\nBAZ=\'y\'\n#c\nDUP=a\nDUP=b\n');
+  ok('parseEnvText last-wins', parsed.map.FOO === '2' && parsed.map.DUP === 'b');
+  ok('parseEnvText strips quotes', parsed.map.BAR === ' x ' && parsed.map.BAZ === 'y');
+  ok('parseEnvText duplicate counts', parsed.keyCounts.FOO === 2 && parsed.keyCounts.DUP === 2);
+  ok('parseEnvText BOM stripped key', parsed.map.FOO === '2');
+
+  var tmpDir = path.join(root, 'runtime', 'env-unit-' + process.pid);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  var envFile = path.join(tmpDir, '.env');
+  fs.writeFileSync(envFile, 'A=1\nFACEME_SKIP_TLS_VERIFY=0\nFACEME_SKIP_TLS_VERIFY=1\nKEEP=yes\n', 'utf8');
+  // isolate process.env pollution
+  delete process.env.FACEME_SKIP_TLS_VERIFY_UNIT;
+  var hadSkip = Object.prototype.hasOwnProperty.call(process.env, 'FACEME_SKIP_TLS_VERIFY');
+  var prevSkip = process.env.FACEME_SKIP_TLS_VERIFY;
+  delete process.env.FACEME_SKIP_TLS_VERIFY;
+  delete process.env.A;
+  delete process.env.KEEP;
+  var diag = ld.loadDotEnv(envFile);
+  ok('loadDotEnv last-wins applied', process.env.FACEME_SKIP_TLS_VERIFY === '1');
+  ok('loadDotEnv reports duplicates', diag.duplicateKeys.FACEME_SKIP_TLS_VERIFY === 2);
+  ok('loadDotEnv envFound', diag.envFound === true);
+  ok('loadDotEnv applied KEEP', process.env.KEEP === 'yes');
+  // system override
+  process.env.FACEME_SKIP_TLS_VERIFY = '0';
+  fs.writeFileSync(envFile, 'FACEME_SKIP_TLS_VERIFY=1\n', 'utf8');
+  var diag2 = ld.loadDotEnv(envFile);
+  ok('system env wins over .env', process.env.FACEME_SKIP_TLS_VERIFY === '0');
+  ok('systemOwnedKeys reports skip', diag2.systemOwnedKeys.indexOf('FACEME_SKIP_TLS_VERIFY') !== -1);
+  ok('system override warning present', (diag2.warnings || []).some(function (w) { return /環境變數/.test(w); }));
+  if (hadSkip) process.env.FACEME_SKIP_TLS_VERIFY = prevSkip;
+  else delete process.env.FACEME_SKIP_TLS_VERIFY;
+  delete process.env.A;
+  delete process.env.KEEP;
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+
+  ok('centralHostIsLoopback 127', ef.centralHostIsLoopback('https://127.0.0.1') === true);
+  ok('centralHostIsLoopback localhost', ef.centralHostIsLoopback('https://localhost:443') === true);
+  ok('centralHostIsLoopback ::1', ef.centralHostIsLoopback('https://[::1]') === true);
+  ok('centralHostIsLoopback lan false', ef.centralHostIsLoopback('https://192.168.32.220') === false);
+
+  // upsert replaces duplicates
+  var envPath = ef.ENV_PATH;
+  var prev = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : null;
+  fs.writeFileSync(envPath, 'FACEME_SKIP_TLS_VERIFY=0\nOTHER=1\nFACEME_SKIP_TLS_VERIFY=0\n', 'utf8');
+  ef.upsertSkipTlsVerify(true);
+  var after = fs.readFileSync(envPath, 'utf8');
+  var matches = after.match(/^FACEME_SKIP_TLS_VERIFY=/gm) || [];
+  ok('upsertSkipTlsVerify single line', matches.length === 1 && /FACEME_SKIP_TLS_VERIFY=1/.test(after));
+  ok('upsertSkipTlsVerify keeps OTHER', /OTHER=1/.test(after));
+  ok('upsertSkipTlsVerify bak', fs.existsSync(ef.BAK_PATH));
+  if (prev != null) fs.writeFileSync(envPath, prev, 'utf8');
+  else { try { fs.unlinkSync(envPath); } catch (_) {} }
+}
+
+
 async function httpIntegration() {
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
@@ -286,7 +351,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09e', config.appVersion === 'v2026-11-09e');
+  ok('appVersion 09f', config.appVersion === 'v2026-11-09f');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -336,7 +401,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09e', health.status === 200 && health.json.appVersion === 'v2026-11-09e');
+  ok('health version 09f', health.status === 200 && health.json.appVersion === 'v2026-11-09f');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -561,9 +626,171 @@ async function httpIntegration() {
   });
   ok('PUT rejects non-https', badPut.status === 400);
 
+
+  // --- skip TLS verify API (v2026-11-09f) ---
+  ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
+  ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
+  ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
+
+  // Reset central to loopback https for skip enable
+  var putLoop = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'https://127.0.0.1' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port,
+          'X-Faceme-Local-Token': adminTok,
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  ok('PUT central back to loopback', putLoop.status === 200 && putLoop.json.centralBaseUrl === 'https://127.0.0.1');
+
+  function putSkip(enabled) {
+    return new Promise(function (resolve, reject) {
+      var body = JSON.stringify({ enabled: enabled });
+      var r = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: port,
+          path: '/api/local-settings/skip-tls-verify',
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            Host: '127.0.0.1:' + port,
+            Origin: 'http://127.0.0.1:' + port,
+            'X-Faceme-Local-Token': adminTok,
+            'Sec-Fetch-Site': 'same-origin'
+          }
+        },
+        function (res) {
+          var chunks = [];
+          res.on('data', function (c) { chunks.push(c); });
+          res.on('end', function () {
+            var text = Buffer.concat(chunks).toString('utf8');
+            var json = null;
+            try { json = JSON.parse(text); } catch (_) {}
+            resolve({ status: res.statusCode, json: json, text: text });
+          });
+        }
+      );
+      r.on('error', reject);
+      r.write(body);
+      r.end();
+    });
+  }
+
+  var skipOn = await putSkip(true);
+  ok('enable skipTls on loopback', skipOn.status === 200 && skipOn.json.skipTlsVerify === true);
+  ok('enable skipTls applied immediate', skipOn.json.applied === 'immediate');
+  var { config: cfgSkip } = require(path.join(root, 'server/config'));
+  ok('config.skipTlsVerify live true', cfgSkip.skipTlsVerify === true);
+  var envSkip = fs.readFileSync(path.join(root, '.env'), 'utf8');
+  ok('env has single SKIP=1', (envSkip.match(/^FACEME_SKIP_TLS_VERIFY=1$/m) || []).length === 1);
+  var ctSkip = await req('POST', '/api/connection-test', { attemptLogin: false });
+  ok('connection-test skipTlsVerify true', ctSkip.status === 200 && ctSkip.json.skipTlsVerify === true);
+
+  // Moving Central off loopback auto-disables skip
+  var putLan = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'https://192.168.1.50' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port,
+          'X-Faceme-Local-Token': adminTok,
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      },
+      function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var text = Buffer.concat(chunks).toString('utf8');
+          var json = null;
+          try { json = JSON.parse(text); } catch (_) {}
+          resolve({ status: res.statusCode, json: json });
+        });
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  ok('non-loopback auto-disables skip', putLan.status === 200 && putLan.json.skipTlsAutoDisabled === true && putLan.json.skipTlsVerify === false);
+  var { config: cfgOff } = require(path.join(root, 'server/config'));
+  ok('config.skipTlsVerify live false after lan', cfgOff.skipTlsVerify === false);
+  var envOff = fs.readFileSync(path.join(root, '.env'), 'utf8');
+  ok('env SKIP cleared to 0', /FACEME_SKIP_TLS_VERIFY=0/.test(envOff));
+
+  var skipDenied = await putSkip(true);
+  ok('enable skip on non-loopback rejected', skipDenied.status === 400 && skipDenied.json.code === 'SKIP_TLS_NOT_LOOPBACK');
+
+  // restore loopback + skip off for remaining tests
+  await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ centralBaseUrl: 'https://127.0.0.1' });
+    var r = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: port,
+        path: '/api/local-settings/central-base',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          Host: '127.0.0.1:' + port,
+          Origin: 'http://127.0.0.1:' + port,
+          'X-Faceme-Local-Token': adminTok,
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      },
+      function (res) {
+        res.on('data', function () {});
+        res.on('end', resolve);
+      }
+    );
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+  await putSkip(false);
+
+  if (prevEnv != null) fs.writeFileSync(envPath, prevEnv, 'utf8');
+  else {
+    try { fs.unlinkSync(envPath); } catch (_) {}
+  }
+
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09e');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09f');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);
@@ -590,6 +817,7 @@ async function httpIntegration() {
     upstreamErrorTests();
     statementVersionTests();
     tlsOptionTests();
+    loadDotEnvUnitTests();
     adapterTests();
     await frontendAsyncChecks();
     await httpIntegration();

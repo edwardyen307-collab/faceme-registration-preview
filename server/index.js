@@ -58,6 +58,28 @@ function start() {
   if (config.statementEnvWarning) {
     console.warn('[warn] ' + config.statementEnvWarning);
   }
+  if (config.envDiagnostics) {
+    const d = config.envDiagnostics;
+    console.log(
+      '[env] path=' +
+        d.envPath +
+        ' found=' +
+        d.envFound +
+        ' envTxt=' +
+        d.envTxtFound +
+        ' skipTlsVerify=' +
+        config.skipTlsVerify
+    );
+    if (d.duplicateKeys && Object.keys(d.duplicateKeys).length) {
+      console.warn('[env] duplicate keys in .env: ' + JSON.stringify(d.duplicateKeys));
+    }
+    if (d.systemOwnedKeys && d.systemOwnedKeys.length) {
+      console.warn('[env] system/user env overrides .env for: ' + d.systemOwnedKeys.join(', '));
+    }
+    (d.warnings || []).forEach(function (w) {
+      console.warn('[env] ' + w);
+    });
+  }
   const app = createApp();
   const server = app.listen(config.port, config.host, () => {
     console.log(

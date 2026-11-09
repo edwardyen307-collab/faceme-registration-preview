@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-09e</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-09f</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,7 +14,7 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09e</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09f</span>
     </div>
   </header>
 
@@ -50,7 +50,20 @@
         <button type="button" class="btn btn-secondary" id="central-base-save" disabled>儲存 Central 位址</button>
         <button type="button" class="btn btn-secondary" id="central-base-reload" disabled>重新載入</button>
       </div>
+
       <div class="api-status" id="central-base-status" aria-live="polite"></div>
+      <div class="skip-tls-row" id="skip-tls-row" hidden>
+        <label class="checkbox-row" for="skip-tls-toggle">
+          <input type="checkbox" id="skip-tls-toggle" disabled />
+          <span>略過自簽憑證檢查（僅限本機 Central）</span>
+        </label>
+        <p class="hint" id="skip-tls-hint">
+          僅當 Central 是 127.0.0.1／localhost／::1 時可開啟。有中間人風險；正式環境請匯入 CA。寫入 .env 的 FACEME_SKIP_TLS_VERIFY，立即生效。
+        </p>
+        <div class="api-status" id="skip-tls-status" aria-live="polite"></div>
+      </div>
+      <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
+
     </section>
     <section class="card" aria-labelledby="register-heading">
       <h2 id="register-heading" class="sr-only">註冊表單</h2>
@@ -138,7 +151,7 @@
   </main>
 
   <footer class="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09e
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09f
   </footer>
   <script src="app.js"></script>
 </body>

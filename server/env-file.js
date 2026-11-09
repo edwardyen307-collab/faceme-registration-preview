@@ -2,17 +2,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const ENV_PATH = path.join(__dirname, '..', '.env');
 const BAK_PATH = path.join(__dirname, '..', '.env.bak');
+const ENV_TXT_PATH = path.join(__dirname, '..', '.env.txt');
 
 const MAX_URL_LEN = 200;
 
-/**
- * Validate Central base URL: https only, host/IP + optional port, no path/query/userinfo.
- * @returns {{ ok: true, normalized: string } | { ok: false, code: string, message: string }}
- */
 function validateCentralBaseUrl(raw) {
   const s = String(raw || '').trim();
   if (!s) {
@@ -45,23 +41,86 @@ function validateCentralBaseUrl(raw) {
   if (!u.hostname) {
     return { ok: false, code: 'NO_HOST', message: '缺少主機名稱' };
   }
-  // Reject weird hosts
   if (/[<>"']/.test(u.hostname)) {
     return { ok: false, code: 'BAD_HOST', message: '主機名稱無效' };
   }
-  let normalized = 'https://' + u.host; // host includes brackets for IPv6 + port
+  let normalized = 'https://' + u.host;
   normalized = normalized.replace(/\/+$/, '');
   return { ok: true, normalized };
 }
 
+function centralHostIsLoopback(baseUrl) {
+  try {
+    let h = new URL(String(baseUrl || '')).hostname.toLowerCase();
+    // URL.hostname may be [::1] or ::1 depending on Node; strip brackets
+    if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+    if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
 function readEnvText() {
   if (!fs.existsSync(ENV_PATH)) return '';
-  return fs.readFileSync(ENV_PATH, 'utf8');
+  let text = fs.readFileSync(ENV_PATH, 'utf8');
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  return text;
+}
+
+function atomicWriteEnv(out) {
+  const prev = fs.existsSync(ENV_PATH) ? fs.readFileSync(ENV_PATH, 'utf8') : '';
+  if (prev) fs.writeFileSync(BAK_PATH, prev, 'utf8');
+  const body = out.endsWith('\n') ? out : out + '\n';
+  const tmp = ENV_PATH + '.' + process.pid + '.' + Date.now() + '.tmp';
+  fs.writeFileSync(tmp, body, 'utf8');
+  fs.renameSync(tmp, ENV_PATH);
+  return { path: ENV_PATH, bak: prev ? BAK_PATH : null };
 }
 
 /**
- * Replace or append FACEME_BASE_URL=... keeping all other lines intact (including passwords).
+ * Replace ALL non-comment lines for key with a single assignment; preserve other lines.
  */
+function upsertEnvKey(key, value) {
+  if (!/^[A-Z0-9_]+$/.test(key)) {
+    const err = new Error('無效的環境變數名稱');
+    err.code = 'BAD_KEY';
+    err.status = 400;
+    throw err;
+  }
+  const prev = readEnvText();
+  const lines = prev.length ? prev.split(/\r?\n/) : [];
+  const nextLines = [];
+  let wrote = false;
+  for (const line of lines) {
+    if (!line.trim() || /^\s*#/.test(line)) {
+      nextLines.push(line);
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if (eq <= 0) {
+      nextLines.push(line);
+      continue;
+    }
+    const k = line.slice(0, eq).trim();
+    if (k === key) {
+      if (!wrote) {
+        nextLines.push(key + '=' + value);
+        wrote = true;
+      }
+      // drop duplicate key lines
+      continue;
+    }
+    nextLines.push(line);
+  }
+  if (!wrote) {
+    if (nextLines.length && nextLines[nextLines.length - 1] !== '') nextLines.push('');
+    nextLines.push(key + '=' + value);
+  }
+  const written = atomicWriteEnv(nextLines.join('\n'));
+  return { ...written, key, value };
+}
+
 function upsertFacemeBaseUrl(normalizedUrl) {
   const v = validateCentralBaseUrl(normalizedUrl);
   if (!v.ok) {
@@ -70,41 +129,22 @@ function upsertFacemeBaseUrl(normalizedUrl) {
     err.status = 400;
     throw err;
   }
-  const prev = readEnvText();
-  const lines = prev.length ? prev.split(/\r?\n/) : [];
-  let found = false;
-  const nextLines = lines.map((line) => {
-    if (/^\s*#/.test(line) || !line.trim()) return line;
-    const m = line.match(/^\s*FACEME_BASE_URL\s*=/);
-    if (!m) return line;
-    found = true;
-    return 'FACEME_BASE_URL=' + v.normalized;
-  });
-  if (!found) {
-    if (nextLines.length && nextLines[nextLines.length - 1] !== '') {
-      nextLines.push('');
-    }
-    nextLines.push('FACEME_BASE_URL=' + v.normalized);
-  }
-  const next = nextLines.join('\n');
-  // Ensure trailing newline
-  const out = next.endsWith('\n') ? next : next + '\n';
+  return { ...upsertEnvKey('FACEME_BASE_URL', v.normalized), value: v.normalized };
+}
 
-  // backup then atomic write
-  if (prev) {
-    fs.writeFileSync(BAK_PATH, prev, 'utf8');
-  }
-  const tmp = ENV_PATH + '.' + process.pid + '.' + Date.now() + '.tmp';
-  fs.writeFileSync(tmp, out, 'utf8');
-  fs.renameSync(tmp, ENV_PATH);
-  return { path: ENV_PATH, bak: prev ? BAK_PATH : null, value: v.normalized };
+function upsertSkipTlsVerify(enabled) {
+  return upsertEnvKey('FACEME_SKIP_TLS_VERIFY', enabled ? '1' : '0');
 }
 
 module.exports = {
   ENV_PATH,
   BAK_PATH,
+  ENV_TXT_PATH,
   MAX_URL_LEN,
   validateCentralBaseUrl,
+  centralHostIsLoopback,
   readEnvText,
-  upsertFacemeBaseUrl
+  upsertEnvKey,
+  upsertFacemeBaseUrl,
+  upsertSkipTlsVerify
 };
