@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09i
+FaceMe update pack v2026-11-09j
 ===============================
 DO NOT overwrite: .env
 
@@ -17,5 +17,5 @@ REQUIRED:
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
 After replace: close old node, start.bat, hard-refresh.
-New: required 群組 field; settings panel collapsed by default; 406 similar-person ZH.
-Group API paths are GUESSED — set FACEME_GROUP_* in .env if swagger differs.
+New (09j): import only official groupId; create needs color+patternId; no tags/skipQC/forceImport;
+no move-after-import; probe groups button; group list paginated POST /list.

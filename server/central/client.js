@@ -9,11 +9,18 @@ const {
 } = require('./adapters');
 const {
   groupListPath,
+  groupListMethod,
   groupCreatePath,
   importGroupField,
+  listRequestBody,
   parseGroupList,
-  parseCreatedGroup
+  parseGroupListPage,
+  parseCreatedGroup,
+  validateGroupCreateFields,
+  findGroupByName,
+  MAX_LIST_PAGES
 } = require('./groups');
+const { maskQcPayload } = require('./qc-explain');
 const {
   buildTlsSocketOptions,
   sanitizeConnectOptions,
@@ -136,41 +143,167 @@ async function snapshotQc(token, imageBuffer, filename, mime) {
   return parseQcResult(result.status, result.body);
 }
 
-async function listGroups(token) {
+async function listGroupsRaw(token) {
   const path = groupListPath();
-  const result = await upstream(path, {
-    method: 'GET',
-    headers: { Authorization: token }
-  });
-  return parseGroupList(result.status, result.body);
+  const method = groupListMethod();
+  const headers = { Authorization: token };
+  if (method !== 'GET') headers['Content-Type'] = 'application/json';
+
+  async function call(bodyObj) {
+    const opts = { method: method, headers: headers };
+    if (method !== 'GET') opts.body = JSON.stringify(bodyObj == null ? {} : bodyObj);
+    return upstream(path, opts);
+  }
+
+  const pageSize = 100;
+  const all = [];
+  const seen = new Set();
+  const attempted = [];
+  let lastResult = null;
+  let lastMasked = null;
+  let pagesFetched = 0;
+
+  for (let pageIndex = 0; pageIndex < MAX_LIST_PAGES; pageIndex++) {
+    const body = listRequestBody(pageIndex);
+    const result = await call(body);
+    attempted.push({ body: body, status: result.status });
+    lastResult = result;
+    pagesFetched++;
+
+    const page = parseGroupListPage(result.status, result.body, pageSize);
+    lastMasked = page.techDetails;
+    for (const g of page.groups) {
+      const key = String(g.id || g.name).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(g);
+    }
+
+    if (page.totalPages != null) {
+      if (pageIndex + 1 >= page.totalPages) break;
+    } else if (!page.maybeMore) {
+      break;
+    }
+  }
+
+  return {
+    groups: all,
+    result: lastResult,
+    attempted: attempted,
+    path: path,
+    method: method,
+    pagesFetched: pagesFetched,
+    techDetails: lastMasked
+  };
 }
 
-async function createGroup(token, name) {
+async function listGroups(token) {
+  const pack = await listGroupsRaw(token);
+  return pack.groups;
+}
+
+async function probeGroups(token) {
+  try {
+    const pack = await listGroupsRaw(token);
+    return {
+      ok: true,
+      path: pack.path,
+      method: pack.method,
+      httpStatus: pack.result && pack.result.status,
+      pagesFetched: pack.pagesFetched,
+      attempted: pack.attempted,
+      groups: pack.groups,
+      parseError: null,
+      techDetails: pack.techDetails,
+      note:
+        '只讀探測（POST /api/website/group/list，分頁最多 20 頁）。權杖未回傳。系統內建群組不可刪改。'
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      path: groupListPath(),
+      method: groupListMethod(),
+      httpStatus: e.status || null,
+      groups: null,
+      parseError: { code: e.code || 'GROUP_LIST_FAILED', message: e.message || String(e) },
+      techDetails: e.techDetails || null,
+      note: '讀取群組失敗（fail closed）。請把技術細節貼給管理員。'
+    };
+  }
+}
+
+async function createGroup(token, name, color, patternId) {
+  const fields = validateGroupCreateFields(name, color, patternId);
   const path = groupCreatePath();
-  // GUESSED body: JSON { name } — override path via env if swagger differs
+  // Confirmed required: name, color, patternId — do NOT send type
   const result = await upstream(path, {
     method: 'POST',
     headers: {
       Authorization: token,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ name: name })
+    body: JSON.stringify({
+      name: fields.name,
+      color: fields.color,
+      patternId: fields.patternId
+    })
   });
-  return parseCreatedGroup(result.status, result.body, name);
+  const created = parseCreatedGroup(result.status, result.body, fields.name);
+  if (!created.id) {
+    // Re-list and resolve by name (fail-closed if still missing)
+    const groups = await listGroups(token);
+    const found = findGroupByName(groups, fields.name);
+    if (!found || !found.id) {
+      const err = new Error(
+        '已建立群組「' + fields.name + '」但回應沒有 id，重新列表也找不到。請到 Central 確認後再匯入。'
+      );
+      err.code = 'GROUP_CREATE_ID_MISSING';
+      err.status = 502;
+      err.techDetails = created.techDetails || null;
+      throw err;
+    }
+    return {
+      id: String(found.id),
+      name: found.name || fields.name,
+      type: found.type || null,
+      techDetails: created.techDetails,
+      resolvedViaList: true
+    };
+  }
+  return {
+    id: String(created.id),
+    name: created.name || fields.name,
+    techDetails: created.techDetails,
+    resolvedViaList: false
+  };
 }
 
-async function personImport(token, { name, employeeId, imageBuffer, filename, mime, groupId, groupName }) {
+async function personImport(token, { name, employeeId, imageBuffer, filename, mime, groupId, information }) {
   const fd = new FormData();
   fd.append('name', name);
   if (employeeId) fd.append('employeeId', employeeId);
-  const field = importGroupField();
-  if (groupId != null && groupId !== '') {
-    fd.append(field, String(groupId));
-    // Also send common aliases so slightly different Central builds may accept one
-    if (field !== 'groupId') fd.append('groupId', String(groupId));
-    if (field !== 'groupIds') fd.append('groupIds', String(groupId));
+  // Official: groupId is int64. No aliases, no tags, no skipQC, no forceImport.
+  const field = importGroupField(); // default groupId
+  if (groupId == null || groupId === '') {
+    const err = new Error('匯入缺少 groupId');
+    err.code = 'GROUP_ID_REQUIRED';
+    err.status = 400;
+    throw err;
   }
-  if (groupName) fd.append('groupName', String(groupName));
+  const gidNum = Number(groupId);
+  if (!Number.isFinite(gidNum)) {
+    const err = new Error('groupId 必須是數字');
+    err.code = 'GROUP_ID_INVALID';
+    err.status = 400;
+    throw err;
+  }
+  fd.append(field, String(Math.trunc(gidNum)));
+  if (information && typeof information === 'object') {
+    fd.append('information', JSON.stringify(information));
+  } else if (typeof information === 'string' && information.trim()) {
+    fd.append('information', information.trim());
+  }
+  // snapshot: single image (official allows up to 5; we send one)
   fd.append('snapshot', blobPart(imageBuffer, mime), filename || 'face.jpg');
   const result = await upstream('/api/website/person/import', {
     method: 'POST',
@@ -399,6 +532,8 @@ module.exports = {
   signIn,
   snapshotQc,
   listGroups,
+  listGroupsRaw,
+  probeGroups,
   createGroup,
   personImport,
   upstream,

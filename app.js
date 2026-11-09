@@ -1,13 +1,21 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09i';
+  var APP_VERSION = 'v2026-11-09j';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
   var TICKET_EXP_KEY = 'faceme_consent_expires';
   var API_BASE_AT_CONSENT_KEY = 'faceme_api_base_at_consent';
   var API_BASE_LS_KEY = 'faceme_api_base';
+  var SETTINGS_OPEN_KEY = 'faceme_settings_open';
+  var GROUP_COLORS = [
+    '#C54C82','#EC729C','#F4AEBA','#8064A2','#800080','#002060','#1F4E79','#2F5597',
+    '#0070C0','#00A4DE','#00B050','#92D050','#548235','#61B292','#AED09E','#C00000',
+    '#FF6B3D','#E2D779','#C55A11','#843C0C','#000000','#303030','#5F5C74','#A6A6B4','#BFBFBF'
+  ];
+  var DEFAULT_GROUP_COLOR = '#0070C0';
+  var DEFAULT_GROUP_PATTERN = 1;
   var MAX_PHOTO_BYTES = 8 * 1024 * 1024;
   var ALLOWED_TYPES = {
     'image/jpeg': true,
@@ -555,7 +563,7 @@
     var details = document.getElementById('settings-details');
     if (!details) return;
     try {
-      var saved = localStorage.getItem(SETTINGS_OPEN_KEY);
+      var saved = lsGet(SETTINGS_OPEN_KEY);
       if (saved === '1') details.open = true;
       else if (saved === '0') details.open = false;
       else details.open = false; // default collapsed
@@ -564,7 +572,7 @@
     }
     details.addEventListener('toggle', function () {
       try {
-        localStorage.setItem(SETTINGS_OPEN_KEY, details.open ? '1' : '0');
+        lsSet(SETTINGS_OPEN_KEY, details.open ? '1' : '0');
       } catch (e) {}
     });
   }
@@ -775,6 +783,12 @@
     var groupList = document.getElementById('group-list');
     var groupError = document.getElementById('group-error');
     var groupStatus = document.getElementById('group-status');
+    var groupExtras = document.getElementById('group-create-extras');
+    var groupColorInput = document.getElementById('group-color');
+    var groupColorSwatches = document.getElementById('group-color-swatches');
+    var groupPatternSelect = document.getElementById('group-pattern');
+    var probeGroupsBtn = document.getElementById('btn-probe-groups');
+    var groupProbeResult = document.getElementById('group-probe-result');
     var knownGroups = [];
     var currentObjectUrl = null;
 
@@ -786,13 +800,80 @@
       }
     }
 
+    function initGroupCreateExtras() {
+      if (groupPatternSelect && !groupPatternSelect.options.length) {
+        for (var p = 1; p <= 20; p++) {
+          var o = document.createElement('option');
+          o.value = String(p);
+          o.textContent = String(p);
+          if (p === DEFAULT_GROUP_PATTERN) o.selected = true;
+          groupPatternSelect.appendChild(o);
+        }
+      }
+      if (groupColorSwatches && !groupColorSwatches.children.length) {
+        for (var i = 0; i < GROUP_COLORS.length; i++) {
+          var c = GROUP_COLORS[i];
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'color-swatch';
+          btn.style.background = c;
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-label', c);
+          btn.dataset.color = c;
+          btn.setAttribute(
+            'aria-selected',
+            c.toUpperCase() === DEFAULT_GROUP_COLOR.toUpperCase() ? 'true' : 'false'
+          );
+          btn.addEventListener('click', function (ev) {
+            var color = ev.currentTarget.dataset.color;
+            if (groupColorInput) groupColorInput.value = color;
+            var kids = groupColorSwatches.querySelectorAll('.color-swatch');
+            for (var k = 0; k < kids.length; k++) {
+              kids[k].setAttribute(
+                'aria-selected',
+                kids[k].dataset.color === color ? 'true' : 'false'
+              );
+            }
+          });
+          groupColorSwatches.appendChild(btn);
+        }
+        if (groupColorInput) groupColorInput.value = DEFAULT_GROUP_COLOR;
+      }
+    }
+
+    function isKnownGroupName(name) {
+      var n = String(name || '').trim().toLowerCase();
+      if (!n) return false;
+      for (var i = 0; i < knownGroups.length; i++) {
+        var g = knownGroups[i];
+        if (String(g.name || '').trim().toLowerCase() === n) return true;
+        if (String(g.id || '').trim().toLowerCase() === n) return true;
+      }
+      return false;
+    }
+
+    function updateGroupCreateExtrasVisibility() {
+      if (!groupExtras) return;
+      var val = ((groupInput && groupInput.value) || '').trim();
+      var show = Boolean(val) && !isKnownGroupName(val) && isRealMode();
+      groupExtras.hidden = !show;
+    }
+
+    function groupLabel(g) {
+      var name = (g && g.name) || '';
+      var type = g && g.type ? String(g.type) : '';
+      return type ? name + '（' + type + '）' : name;
+    }
+
     function loadGroups() {
+      initGroupCreateExtras();
       if (!groupInput || !isRealMode()) {
         if (groupStatus) {
           groupStatus.textContent = isRealMode()
             ? ''
             : '預覽模式：群組僅本機驗證必填，不會向 Central 查詢。';
         }
+        if (groupExtras) groupExtras.hidden = true;
         return;
       }
       var base = getApiBase();
@@ -816,9 +897,10 @@
               groupStatus.textContent =
                 '無法載入群組（' +
                 ((pack.data && pack.data.error) || pack.res.status) +
-                '）。請自行輸入；若為新名稱，真實模式會嘗試建立。';
+                '）。請自行輸入；若為新名稱，真實模式會先建立再以 groupId 匯入。';
               groupStatus.className = 'api-status error';
             }
+            updateGroupCreateExtrasVisibility();
             return;
           }
           knownGroups = (pack.data && pack.data.groups) || [];
@@ -827,6 +909,7 @@
             for (var i = 0; i < knownGroups.length; i++) {
               var opt = document.createElement('option');
               opt.value = knownGroups[i].name || knownGroups[i].id || '';
+              opt.label = groupLabel(knownGroups[i]);
               groupList.appendChild(opt);
             }
           }
@@ -835,10 +918,9 @@
             groupStatus.textContent =
               '已載入 ' +
               knownGroups.length +
-              ' 個群組' +
-              (pack.data && pack.data.guessed ? '（端點為猜測，可於 .env 調整）' : '') +
-              '。也可自行輸入新名稱。';
+              ' 個群組（POST /api/website/group/list）。也可自行輸入新名稱（會 create 後用 groupId 匯入）。';
           }
+          updateGroupCreateExtrasVisibility();
         })
         .catch(function (e) {
           knownGroups = [];
@@ -847,7 +929,70 @@
             groupStatus.textContent =
               '無法載入群組：' + ((e && e.message) || e) + '。請自行輸入名稱。';
           }
+          updateGroupCreateExtrasVisibility();
         });
+    }
+
+    if (groupInput) {
+      groupInput.addEventListener('input', updateGroupCreateExtrasVisibility);
+      groupInput.addEventListener('change', updateGroupCreateExtrasVisibility);
+    }
+
+    if (probeGroupsBtn) {
+      probeGroupsBtn.addEventListener('click', function () {
+        if (!isRealMode()) {
+          if (groupProbeResult) {
+            groupProbeResult.hidden = false;
+            groupProbeResult.textContent = '預覽模式無法探測 Central 群組。';
+          }
+          return;
+        }
+        var base = getApiBase();
+        if (!base || typeof fetch !== 'function') return;
+        if (groupProbeResult) {
+          groupProbeResult.hidden = false;
+          groupProbeResult.textContent = '探測中…';
+        }
+        fetch(base + '/api/groups/probe', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data };
+            });
+          })
+          .then(function (pack) {
+            if (groupProbeResult) {
+              groupProbeResult.textContent = JSON.stringify(pack.data, null, 2);
+            }
+            if (pack.res.ok && pack.data && Array.isArray(pack.data.groups)) {
+              knownGroups = pack.data.groups;
+              if (groupList) {
+                groupList.innerHTML = '';
+                for (var i = 0; i < knownGroups.length; i++) {
+                  var opt = document.createElement('option');
+                  opt.value = knownGroups[i].name || knownGroups[i].id || '';
+                  opt.label = groupLabel(knownGroups[i]);
+                  groupList.appendChild(opt);
+                }
+              }
+              if (groupStatus) {
+                groupStatus.className = 'api-status';
+                groupStatus.textContent =
+                  '探測成功，已載入 ' + knownGroups.length + ' 個群組。';
+              }
+              updateGroupCreateExtrasVisibility();
+            }
+          })
+          .catch(function (e) {
+            if (groupProbeResult) {
+              groupProbeResult.textContent = '探測失敗：' + ((e && e.message) || e);
+            }
+          });
+      });
     }
 
     loadGroups();
@@ -1110,6 +1255,15 @@
         if (mid) fd.append('employeeId', mid);
         fd.append('consentTicket', ssGet(TICKET_KEY) || '');
         fd.append('groupName', groupVal);
+        if (!isKnownGroupName(groupVal)) {
+          var colorVal =
+            (groupColorInput && groupColorInput.value) || DEFAULT_GROUP_COLOR;
+          var patternVal =
+            (groupPatternSelect && groupPatternSelect.value) ||
+            String(DEFAULT_GROUP_PATTERN);
+          fd.append('groupColor', colorVal);
+          fd.append('groupPatternId', patternVal);
+        }
         fd.append('image', file, file.name || 'face.jpg');
 
         if (submitBtn) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-09i</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-09j</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,7 +14,7 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09i</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09j</span>
     </div>
   </header>
 
@@ -131,7 +131,20 @@
             aria-describedby="group-hint group-error"
           />
           <datalist id="group-list"></datalist>
-          <span class="hint" id="group-hint">必填。可從清單選擇現有群組，或輸入新名稱（新名稱會在真實模式寫入 Central 建立群組後再匯入）。</span>
+          <span class="hint" id="group-hint">必填。可從清單選擇現有群組，或輸入新名稱（新名稱會先 create 再以官方 groupId 匯入）。不送 tags／skipQC／forceImport。</span>
+          <div class="api-row" style="margin-top:0.4rem">
+            <button type="button" class="btn btn-secondary" id="btn-probe-groups">測試讀取群組</button>
+          </div>
+          <pre class="conn-result" id="group-probe-result" aria-live="polite" hidden></pre>
+          <div id="group-create-extras" class="group-create-extras" hidden>
+            <p class="hint">新群組需指定顏色與圖示編號（Central create 必填；不送 type）。</p>
+            <label class="hint" for="group-color">顏色</label>
+            <div class="color-swatches" id="group-color-swatches" role="listbox" aria-label="群組顏色"></div>
+            <input type="hidden" id="group-color" name="groupColor" value="#0070C0" />
+            <label class="hint" for="group-pattern">圖示編號（1–20）</label>
+            <select id="group-pattern" name="groupPatternId">
+            </select>
+          </div>
           <div class="error" id="group-error" role="alert" aria-live="polite"></div>
           <div class="api-status" id="group-status" aria-live="polite"></div>
         </div>
@@ -179,7 +192,7 @@
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09i
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09j
   </footer>
   <script src="app.js"></script>
 </body>

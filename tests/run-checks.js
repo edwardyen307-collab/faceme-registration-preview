@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09i', /v2026-11-09i/.test(text));
+  ok('start.bat version banner 09j', /v2026-11-09j/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09i in pages', /v2026-11-09i/.test(indexHtml) && /v2026-11-09i/.test(registerHtml));
+ok('version v2026-11-09j in pages', /v2026-11-09j/.test(indexHtml) && /v2026-11-09j/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -89,6 +89,8 @@ ok('structured failure handles import', /IMPORT_PERSON_ID_MISSING/.test(js));
 ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
 
 ok('group field in register page', /group-name/.test(registerHtml) && /group-list/.test(registerHtml));
+ok('group probe + create extras in register', /btn-probe-groups/.test(registerHtml) && /group-create-extras/.test(registerHtml) && /group-color/.test(registerHtml));
+ok('app sends groupColor for new groups', /groupColor/.test(js) && /groupPatternId/.test(js) && /groups\/probe/.test(js));
 ok('settings collapsible details', /settings-details/.test(indexHtml) && /settings-details/.test(registerHtml));
 ok('groups module exists', fs.existsSync(path.join(root, 'server/central/groups.js')));
 ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js));
@@ -345,12 +347,23 @@ function adapterTests() {
 
   // groups adapter
   var groupsMod = require(path.join(root, 'server/central/groups'));
-  var glist = groupsMod.parseGroupList(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/groups.list.json'), 'utf8')));
+  var glistPack = groupsMod.parseGroupList(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/groups.list.json'), 'utf8')));
+  var glist = glistPack.groups;
   ok('parseGroupList length', glist.length === 2);
   ok('findGroupByName case-insensitive', groupsMod.findGroupByName(glist, 'employees').id === '2');
   ok('findGroupByName miss', groupsMod.findGroupByName(glist, 'NoSuch') === null);
   var created = groupsMod.parseCreatedGroup(200, { id: '9', name: 'NewTeam' }, 'NewTeam');
   ok('parseCreatedGroup', created.id === '9' && created.name === 'NewTeam');
+  var fieldsOk = groupsMod.validateGroupCreateFields('NewTeam', '#0070C0', 1);
+  ok('validateGroupCreateFields', fieldsOk.color === '#0070C0' && fieldsOk.patternId === 1);
+  try {
+    groupsMod.validateGroupCreateFields('VIP', '#0070C0', 1);
+    ok('reserved group name blocked', false);
+  } catch (er) {
+    ok('reserved group name blocked', er.code === 'GROUP_NAME_RESERVED');
+  }
+  ok('import field default groupId', groupsMod.importGroupField() === 'groupId');
+  ok('list body has pageIndex', groupsMod.listRequestBody(0).pageIndex === 0 && groupsMod.listRequestBody(0).orderBy === 'name:asc');
 
   // validate group required
   var validate = require(path.join(root, 'server/validate'));
@@ -492,8 +505,41 @@ async function httpIntegration() {
       }
       if (req.url === '/api/website/person/import') {
         importHits++;
+        var raw = Buffer.concat(chunks).toString('binary');
+        // Ensure official groupId present and forbidden fields absent
+        var hasGroupId = /name="groupId"/.test(raw);
+        var hasAlias = /name="groupIds"/.test(raw) || /name="groupName"/.test(raw);
+        var hasSkip = /name="skipQC"/.test(raw) || /name="forceImport"/.test(raw) || /name="tags"/.test(raw);
+        if (!hasGroupId || hasAlias || hasSkip) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'bad import fields',
+            hasGroupId: hasGroupId,
+            hasAlias: hasAlias,
+            hasSkip: hasSkip
+          }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ personId: 'P-FAKE-001' }));
+        return;
+      }
+      if (req.url === '/api/website/group/list') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          data: {
+            list: [
+              { id: 1, name: 'Default', type: 'NORMAL' },
+              { id: 2, name: 'Employees', type: 'EMPLOYEE' }
+            ],
+            totalPages: 1
+          }
+        }));
+        return;
+      }
+      if (req.url === '/api/website/group/create') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: 99, name: 'NewFromTest' }));
         return;
       }
       res.writeHead(404);
@@ -510,7 +556,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09i', config.appVersion === 'v2026-11-09i');
+  ok('appVersion 09j', config.appVersion === 'v2026-11-09j');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -560,7 +606,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09i', health.status === 200 && health.json.appVersion === 'v2026-11-09i');
+  ok('health version 09j', health.status === 200 && health.json.appVersion === 'v2026-11-09j');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -834,10 +880,18 @@ async function httpIntegration() {
   var groupsRes = await req('GET', '/api/groups');
   ok('GET /api/groups ok', groupsRes.status === 200 && groupsRes.json.ok === true && groupsRes.json.groups.length === 2);
   ok('GET /api/groups no token leaked', !/fake-token/.test(groupsRes.text));
+  var prevProbe = centralG.probeGroups;
+  centralG.probeGroups = async function () {
+    return { ok: true, groups: [{ id: '1', name: 'Default' }], note: 'probe-test', path: '/api/website/group/list', method: 'POST' };
+  };
+  var probeRes = await req('POST', '/api/groups/probe', {});
+  ok('POST /api/groups/probe ok', probeRes.status === 200 && probeRes.json.ok === true && Array.isArray(probeRes.json.groups));
+  ok('POST /api/groups/probe no token leaked', !/fake-token/.test(probeRes.text));
+  centralG.probeGroups = prevProbe;
   centralG.listGroups = prevList;
   centralG.signIn = prevSign;
 
-  // --- QC fail reasons on /api/register (v2026-11-09i) ---
+  // --- QC fail reasons on /api/register (v2026-11-09j) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -935,7 +989,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09i) ---
+  // --- skip TLS verify API (v2026-11-09j) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -1098,7 +1152,7 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09i');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09j');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

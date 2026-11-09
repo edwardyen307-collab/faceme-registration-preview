@@ -164,10 +164,21 @@ router.get('/groups', async (req, res, next) => {
     res.json({
       ok: true,
       groups: groups,
-      guessed: true,
+      guessed: false,
       note:
-        '群組列表端點為猜測（預設 GET /api/website/group）。可用 FACEME_GROUP_LIST_PATH 覆寫。權杖不會回傳給瀏覽器。'
+        '群組列表：POST /api/website/group/list（分頁）。權杖不會回傳給瀏覽器。系統內建群組不可刪改。'
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/groups/probe', express.json({ limit: '4kb' }), async (req, res, next) => {
+  try {
+    assertCentralCredentials();
+    const token = await central.signIn();
+    const probe = await central.probeGroups(token);
+    res.json(probe);
   } catch (e) {
     next(e);
   }
@@ -223,8 +234,19 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
     const groupName = validateGroupName(
       (req.body && (req.body.groupName || req.body.group)) || ''
     );
+    const groupColor = (req.body && req.body.groupColor) || undefined;
+    const groupPatternId =
+      (req.body && (req.body.groupPatternId || req.body.patternId)) || undefined;
     const imgMeta = validateImageFile(req.file);
     imageBuffer = req.file.buffer;
+
+    // Optional information JSON fields (official person import)
+    const information = {};
+    for (const key of ['email', 'company', 'title', 'note']) {
+      const v = req.body && req.body[key];
+      if (typeof v === 'string' && v.trim()) information[key] = v.trim();
+    }
+    const infoPayload = Object.keys(information).length ? information : undefined;
 
     const ticket = req.body && req.body.consentTicket;
     consumeTicket(ticket, config.statementVersion);
@@ -245,19 +267,18 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
       throw err;
     }
 
-    // Resolve group: match existing (case-insensitive) or create (real-mode write)
+    // Resolve group: match existing (case-insensitive) or create then import with official groupId only
     let groups = [];
     try {
       groups = await central.listGroups(token);
     } catch (listErr) {
-      // Creating still possible if list fails; match won't work
       groups = [];
     }
     let group = findGroupByName(groups, groupName);
     let groupCreated = false;
     if (!group) {
       try {
-        group = await central.createGroup(token, groupName);
+        group = await central.createGroup(token, groupName, groupColor, groupPatternId);
         groupCreated = true;
       } catch (createErr) {
         const err = new Error(
@@ -272,12 +293,19 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
           {
             id: 'group_create_failed',
             text: err.message,
-            hint: '請先在 Central 手動建立同名群組，或檢查 FACEME_GROUP_CREATE_PATH 是否符合 swagger'
+            hint: '請先在 Central 手動建立同名群組，或確認顏色／圖示編號（create 需 name+color+patternId）'
           }
         ];
         err.techDetails = createErr && createErr.techDetails ? createErr.techDetails : null;
         throw err;
       }
+    }
+
+    if (!group || group.id == null || group.id === '') {
+      const err = new Error('群組缺少 id，無法匯入（官方匯入欄位為 groupId）');
+      err.code = 'GROUP_ID_REQUIRED';
+      err.status = 502;
+      throw err;
     }
 
     const imported = await central.personImport(token, {
@@ -287,7 +315,7 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
       filename: imgMeta.filename,
       mime: imgMeta.mime,
       groupId: group.id,
-      groupName: group.name || groupName
+      information: infoPayload
     });
     const personId = typeof imported === 'object' ? imported.personId : imported;
     const techDetails = typeof imported === 'object' ? imported.techDetails : null;

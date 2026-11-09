@@ -565,3 +565,14 @@ textarea:focus-visible,
 .settings-details[open] .settings-summary-hint::after {
   content: "";
 }
+
+
+/* Group create extras (v2026-11-09j) */
+.group-create-extras { margin-top: 0.6rem; padding: 0.6rem; border: 1px solid var(--border, #ddd); border-radius: 8px; }
+.color-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.35rem 0 0.6rem; }
+.color-swatch {
+  width: 28px; height: 28px; border-radius: 6px; border: 2px solid transparent;
+  cursor: pointer; padding: 0;
+}
+.color-swatch[aria-selected="true"] { border-color: #111; box-shadow: 0 0 0 2px #fff inset; }
+.group-create-extras select { max-width: 8rem; }
