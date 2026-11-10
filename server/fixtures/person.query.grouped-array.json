@@ -1,0 +1,9 @@
+{
+  "personId": 23,
+  "name": "Multi",
+  "employeeId": "M23",
+  "group": [
+    { "groupId": 14, "name": "員工", "type": "NORMAL" },
+    { "groupId": 1, "name": "VIP", "type": "VIP" }
+  ]
+}

@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09m', /v2026-11-09m/.test(text));
+  ok('start.bat version banner 09n', /v2026-11-09n/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09m in pages', /v2026-11-09m/.test(indexHtml) && /v2026-11-09m/.test(registerHtml));
+ok('version v2026-11-09n in pages', /v2026-11-09n/.test(indexHtml) && /v2026-11-09n/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -158,6 +158,53 @@ ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
   ok('evaluate cross-site origin denied', xo.ok === false && xo.code === 'BAD_ORIGIN');
   cfgLan.lanAccess = prevLan;
 })();
+
+ok('person-admin panel in pages', /person-admin-card/.test(indexHtml) && /person-admin-card/.test(registerHtml) && /找人／補群組/.test(indexHtml));
+ok('app person-admin API paths', /person-admin\/member-list/.test(js) && /person-admin\/assign/.test(js) && /confirm\(/.test(js));
+
+(function personAdminUnitTests() {
+  var pa = require(path.join(root, 'server/central/person-admin'));
+  var lan = require(path.join(root, 'server/lan-access'));
+  ok('person-admin not LAN-allowed', lan.isSettingsPath('/api/person-admin/query') && !lan.isLanAllowedPath('/api/person-admin/member-list'));
+
+  function cls(body) { return pa.classifyPersonGroup(body).status; }
+  ok('group object is grouped', cls({ group: { groupId: 1, name: 'VIP' } }) === 'grouped');
+  ok('group array is grouped', cls({ group: [{ groupId: 14, name: '員工' }] }) === 'grouped');
+  ok('group null is ungrouped', cls({ group: null }) === 'ungrouped');
+  ok('group missing is ungrouped', cls({ personId: 1, name: 'x' }) === 'ungrouped');
+  ok('group [] is ungrouped', cls({ group: [] }) === 'ungrouped');
+  ok('group {} is ungrouped', cls({ group: {} }) === 'ungrouped');
+  ok('group string unknown', cls({ group: 'VIP' }) === 'unknown');
+
+  var listed = pa.parseMemberListPage(
+    200,
+    JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.member-list.grouped.json'), 'utf8')),
+    'https://192.168.32.220'
+  );
+  ok('member list official shape', listed.persons.length === 1 && listed.persons[0].personId === '1' && listed.persons[0].groupStatus === 'grouped' && listed.totalSize === 1);
+  ok('member list detail url', /user-detail\?id=1/.test(listed.persons[0].detailUrl));
+  ok('hint when only grouped', /不會列出未分組/.test(pa.memberListHint(listed.persons)));
+
+  var uNull = pa.parsePersonQuery(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.query.ungrouped-null.json'), 'utf8')), 'https://192.168.32.220');
+  ok('query ungrouped null', uNull.personId === '20' && uNull.groupStatus === 'ungrouped');
+  var uArr = pa.parsePersonQuery(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.query.ungrouped-empty-array.json'), 'utf8')), 'https://c');
+  ok('query ungrouped []', uArr.groupStatus === 'ungrouped');
+  var uObj = pa.parsePersonQuery(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.query.ungrouped-empty-object.json'), 'utf8')), 'https://c');
+  ok('query ungrouped {}', uObj.groupStatus === 'ungrouped');
+  var gArr = pa.parsePersonQuery(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.query.grouped-array.json'), 'utf8')), 'https://c');
+  ok('query grouped array', gArr.groupStatus === 'grouped' && gArr.groups.length === 2 && gArr.groups[0].groupId === '14');
+  ok('query 404 is not found', pa.parsePersonQuery(404, { errorMessage: 'no' }, 'https://c') === null);
+  var upd = pa.parsePersonUpdate(200, JSON.parse(fs.readFileSync(path.join(root, 'server/fixtures/person.update.success.json'), 'utf8')));
+  ok('update returns personId', upd.personId === '20');
+  try {
+    pa.validateScanRange(1, 201);
+    ok('scan cap 200', false);
+  } catch (e) {
+    ok('scan cap 200', e.code === 'SCAN_RANGE_TOO_LARGE');
+  }
+  ok('personId trim', pa.validatePersonId(' 14 ') === '14');
+})();
+
 
 ok('load-dotenv module exists', fs.existsSync(path.join(root, 'server/load-dotenv.js')));
 
@@ -710,7 +757,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09m', config.appVersion === 'v2026-11-09m');
+  ok('appVersion 09n', config.appVersion === 'v2026-11-09n');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -760,7 +807,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09m', health.status === 200 && health.json.appVersion === 'v2026-11-09m');
+  ok('health version 09n', health.status === 200 && health.json.appVersion === 'v2026-11-09n');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -1045,7 +1092,7 @@ async function httpIntegration() {
   centralG.listGroups = prevList;
   centralG.signIn = prevSign;
 
-  // --- group body encoding: JSON 415 → multipart success (v2026-11-09m) ---
+  // --- group body encoding: JSON 415 → multipart success (v2026-11-09n) ---
   var groupsEnc = require(path.join(root, 'server/central/groups'));
   var centralEnc = require(path.join(root, 'server/central/client'));
   var cfgEnc = require(path.join(root, 'server/config'));
@@ -1103,7 +1150,7 @@ async function httpIntegration() {
   // restore signIn if we overwrote (prevSign already restored above; re-stub only if needed later)
   centralEnc.signIn = prevSign;
 
-  // --- QC fail reasons on /api/register (v2026-11-09m) ---
+  // --- QC fail reasons on /api/register (v2026-11-09n) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -1201,7 +1248,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09m) ---
+  // --- skip TLS verify API (v2026-11-09n) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -1365,7 +1412,7 @@ async function httpIntegration() {
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
 
-  // --- LAN access Host gate (v2026-11-09m) ---
+  // --- LAN access Host gate (v2026-11-09n) ---
   function reqHost(method, urlPath, hostHeader, extraHeaders, bodyObj) {
     var body = bodyObj ? JSON.stringify(bodyObj) : null;
     var headers = Object.assign({ Host: hostHeader }, extraHeaders || {});
@@ -1410,9 +1457,115 @@ async function httpIntegration() {
   ok('public IP Host rejected', pubRes.status === 403 && pubRes.json && pubRes.json.code === 'PUBLIC_IP_DENIED');
   var xoRes = await reqHost('GET', '/api/health', '192.168.32.10:' + port, { Origin: 'https://evil.example' });
   ok('LAN cross-site Origin rejected', xoRes.status === 403 && xoRes.json && xoRes.json.code === 'BAD_ORIGIN');
+
+  var lanPa = await reqHost('POST', '/api/person-admin/query', '192.168.32.10:' + port, { 'Content-Type': 'application/json', Origin: 'http://192.168.32.10:' + port }, { personId: '20' });
+  ok('LAN rejects person-admin even when LAN on', lanPa.status === 403 && lanPa.json && (lanPa.json.code === 'NOT_LOOPBACK' || lanPa.json.code === 'BAD_HOST' || lanPa.json.code === 'LAN_PATH_DENIED'));
   cfgLanHttp.config.lanAccess = prevLanHttp;
 
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09m');
+  var centralPa = require(path.join(root, 'server/central/client'));
+  var cfgPa = require(path.join(root, 'server/config'));
+  var prevFlags = { f: cfgPa.config.realModeFlag, l: cfgPa.config.legalConfirmed, e: cfgPa.config.realModeEnabled };
+  var prevQuery = centralPa.queryPerson;
+  var prevUpdate = centralPa.updatePersonGroup;
+  var prevSignPa = centralPa.signIn;
+  var prevListG = centralPa.listGroups;
+  centralPa.signIn = async function () { return 'fake-token-for-tests-only-not-real'; };
+  centralPa.listGroups = async function () { return [{ id: '14', name: '員工', type: 'NORMAL' }]; };
+  centralPa.queryPerson = async function () {
+    return { personId: '20', name: 'Lost One', employeeId: 'L20', groupStatus: 'ungrouped', groups: [], detailUrl: 'https://example/user-detail?id=20' };
+  };
+  var qLoop = await req('POST', '/api/person-admin/query', { personId: '20' });
+  ok('loopback query person', qLoop.status === 200 && qLoop.json && qLoop.json.person && qLoop.json.person.personId === '20' && qLoop.json.person.groupStatus === 'ungrouped');
+
+  cfgPa.config.realModeFlag = false;
+  cfgPa.config.legalConfirmed = false;
+  cfgPa.config.realModeEnabled = false;
+  var noGate = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ personId: '20', groupId: '14', confirm: true });
+    var r = http.request({
+      hostname: '127.0.0.1', port: port, path: '/api/person-admin/assign', method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+        Host: '127.0.0.1:' + port, Origin: 'http://127.0.0.1:' + port,
+        'X-Faceme-Local-Token': adminTok, 'Sec-Fetch-Site': 'same-origin'
+      }
+    }, function (res) {
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () {
+        var text = Buffer.concat(chunks).toString('utf8');
+        var json = null; try { json = JSON.parse(text); } catch (_) {}
+        resolve({ status: res.statusCode, json: json, text: text });
+      });
+    });
+    r.on('error', reject); r.write(body); r.end();
+  });
+  ok('assign without real-mode gates rejected', noGate.status === 503 && noGate.json && (noGate.json.code === 'REAL_MODE_DISABLED' || noGate.json.code === 'STATEMENT_NOT_CONFIRMED'));
+
+  cfgPa.config.realModeFlag = true;
+  cfgPa.config.legalConfirmed = true;
+  cfgPa.config.realModeEnabled = true;
+  var noConfirm = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ personId: '20', groupId: '14' });
+    var r = http.request({
+      hostname: '127.0.0.1', port: port, path: '/api/person-admin/assign', method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+        Host: '127.0.0.1:' + port, Origin: 'http://127.0.0.1:' + port,
+        'X-Faceme-Local-Token': adminTok, 'Sec-Fetch-Site': 'same-origin'
+      }
+    }, function (res) {
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () {
+        var text = Buffer.concat(chunks).toString('utf8');
+        var json = null; try { json = JSON.parse(text); } catch (_) {}
+        resolve({ status: res.statusCode, json: json });
+      });
+    });
+    r.on('error', reject); r.write(body); r.end();
+  });
+  ok('assign without confirm rejected', noConfirm.status === 400 && noConfirm.json && noConfirm.json.code === 'CONFIRM_REQUIRED');
+
+  centralPa.updatePersonGroup = async function (token, personId, groupId) {
+    return { personId: String(personId), encoding: 'multipart' };
+  };
+  centralPa.queryPerson = async function () {
+    return { personId: '20', name: 'Lost One', groupStatus: 'grouped', groups: [{ groupId: '14', name: '員工', type: 'NORMAL' }] };
+  };
+  var assigned = await new Promise(function (resolve, reject) {
+    var body = JSON.stringify({ personId: '20', groupId: '14', confirm: true });
+    var r = http.request({
+      hostname: '127.0.0.1', port: port, path: '/api/person-admin/assign', method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+        Host: '127.0.0.1:' + port, Origin: 'http://127.0.0.1:' + port,
+        'X-Faceme-Local-Token': adminTok, 'Sec-Fetch-Site': 'same-origin'
+      }
+    }, function (res) {
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () {
+        var text = Buffer.concat(chunks).toString('utf8');
+        var json = null; try { json = JSON.parse(text); } catch (_) {}
+        resolve({ status: res.statusCode, json: json, text: text });
+      });
+    });
+    r.on('error', reject); r.write(body); r.end();
+  });
+  ok('assign with gates+confirm succeeds', assigned.status === 200 && assigned.json && assigned.json.ok && assigned.json.verified && assigned.json.verified.groupStatus === 'grouped');
+  ok('assign response has no token', !/fake-token/.test(assigned.text));
+
+  cfgPa.config.realModeFlag = prevFlags.f;
+  cfgPa.config.legalConfirmed = prevFlags.l;
+  cfgPa.config.realModeEnabled = prevFlags.e;
+  centralPa.queryPerson = prevQuery;
+  centralPa.updatePersonGroup = prevUpdate;
+  centralPa.signIn = prevSignPa;
+  centralPa.listGroups = prevListG;
+
+
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09n');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

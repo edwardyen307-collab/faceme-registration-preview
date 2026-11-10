@@ -593,3 +593,15 @@ textarea:focus-visible,
   .api-row input[type="url"] { font-size: 16px; }
   .btn { min-height: 44px; }
 }
+
+/* Person admin (v2026-11-09n) */
+.person-admin-card { margin-top: 1rem; }
+.pa-result { margin-top: 0.6rem; overflow-x: auto; }
+.pa-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.pa-table th, .pa-table td { border: 1px solid var(--line); padding: 0.4rem 0.5rem; text-align: left; word-break: break-word; }
+.pa-table th { background: var(--brand-soft); }
+.pa-status-ungrouped { color: var(--danger); font-weight: 650; }
+.pa-status-grouped { color: var(--ok); }
+.pa-status-unknown { color: var(--warn-ink); }
+#pa-assign-group { min-width: 10rem; max-width: 100%; padding: 0.55rem 0.6rem; border-radius: 10px; border: 1px solid var(--line); font: inherit; }
+#pa-query-id, #pa-scan-from, #pa-scan-to, #pa-assign-id { flex: 1 1 6rem; min-width: 5rem; padding: 0.65rem 0.75rem; border: 1px solid var(--line); border-radius: 10px; font: inherit; }

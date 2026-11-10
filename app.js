@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09m';
+  var APP_VERSION = 'v2026-11-09n';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -1454,6 +1454,315 @@
     }
   }
 
+
+  function initPersonAdminPanel() {
+    var card = document.getElementById('person-admin-card');
+    if (!card) return;
+    if (!isLocalLoopbackPage() || isPagesHost()) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+    function setStatus(id, msg, isError) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = msg || '';
+      el.className = 'api-status' + (isError ? ' error' : '');
+    }
+    function apiBase() {
+      return getApiBase() || (isLocalLoopbackPage() ? location.origin : '');
+    }
+    function paHeaders(mutate) {
+      var h = { 'Content-Type': 'application/json' };
+      if (mutate && localAdminToken) h['X-Faceme-Local-Token'] = localAdminToken;
+      return h;
+    }
+    function ensureToken() {
+      if (localAdminToken) return Promise.resolve(localAdminToken);
+      var base = apiBase();
+      if (!base || typeof fetch !== 'function') return Promise.reject(new Error('無法取得本機管理 token'));
+      return fetch(base + '/api/local-settings', { method: 'GET', credentials: 'same-origin' })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { res: res, data: data };
+          });
+        })
+        .then(function (pack) {
+          if (!pack.res.ok) throw new Error((pack.data && pack.data.error) || '無法取得本機管理 token');
+          localAdminToken = pack.data.localAdminToken || null;
+          if (!localAdminToken) throw new Error('後端未回傳本機管理 token');
+          return localAdminToken;
+        });
+    }
+    function postPa(path, body, mutate) {
+      var base = apiBase();
+      if (!base) return Promise.reject(new Error('請先連到本機薄後端（127.0.0.1）。'));
+      var seq = mutate ? ensureToken() : Promise.resolve(null);
+      return seq.then(function () {
+        return fetch(base + path, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: paHeaders(!!mutate),
+          body: JSON.stringify(body || {})
+        });
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          return { res: res, data: data };
+        });
+      });
+    }
+    function groupLabel(g) {
+      if (!g) return '';
+      var name = g.name || g.groupId || g.id || '';
+      var type = g.type ? '（' + g.type + '）' : '';
+      return name + type;
+    }
+    function renderPersonTable(el, rows) {
+      if (!el) return;
+      if (!rows || !rows.length) {
+        el.hidden = false;
+        el.innerHTML = '<p class="hint">沒有符合的人。</p>';
+        return;
+      }
+      var html =
+        '<table class="pa-table"><thead><tr>' +
+        '<th>personId</th><th>姓名</th><th>員工編號</th><th>群組狀態</th><th>群組</th><th>連結</th><th></th>' +
+        '</tr></thead><tbody>';
+      for (var i = 0; i < rows.length; i++) {
+        var p = rows[i];
+        var st = p.groupStatus || 'unknown';
+        var gs = (p.groups || [])
+          .map(function (g) {
+            return esc(groupLabel(g) || g.groupId);
+          })
+          .join('、');
+        var link = p.detailUrl
+          ? '<a href="' + esc(p.detailUrl) + '" target="_blank" rel="noopener noreferrer">開啟</a>'
+          : '';
+        html +=
+          '<tr>' +
+          '<td>' + esc(p.personId) + '</td>' +
+          '<td>' + esc(p.name) + '</td>' +
+          '<td>' + esc(p.employeeId) + '</td>' +
+          '<td class="pa-status-' + esc(st) + '">' + esc(st) + '</td>' +
+          '<td>' + (gs || '—') + '</td>' +
+          '<td>' + link + '</td>' +
+          '<td><button type="button" class="btn btn-secondary pa-use-id" data-person-id="' +
+          esc(p.personId) +
+          '">用此人</button></td>' +
+          '</tr>';
+      }
+      html += '</tbody></table>';
+      el.hidden = false;
+      el.innerHTML = html;
+      var btns = el.querySelectorAll('.pa-use-id');
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].addEventListener('click', function (ev) {
+          var id = ev.currentTarget.getAttribute('data-person-id');
+          var q = document.getElementById('pa-query-id');
+          var a = document.getElementById('pa-assign-id');
+          if (q) q.value = id;
+          if (a) a.value = id;
+        });
+      }
+    }
+    function renderPersonCard(el, person) {
+      if (!el || !person) return;
+      var gs = (person.groups || [])
+        .map(function (g) {
+          return esc(groupLabel(g) || g.groupId);
+        })
+        .join('、');
+      var link = person.detailUrl
+        ? '<a href="' + esc(person.detailUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(person.detailUrl) + '</a>'
+        : '—';
+      el.hidden = false;
+      el.innerHTML =
+        '<p><strong>#' +
+        esc(person.personId) +
+        '</strong> ' +
+        esc(person.name || '（無姓名）') +
+        (person.employeeId ? ' ／ ' + esc(person.employeeId) : '') +
+        '</p>' +
+        '<p>群組狀態：<span class="pa-status-' +
+        esc(person.groupStatus) +
+        '">' +
+        esc(person.groupStatus) +
+        '</span> ' +
+        (gs || '—') +
+        '</p>' +
+        '<p>詳細頁：' +
+        link +
+        '</p>';
+      var assign = document.getElementById('pa-assign-id');
+      if (assign && person.personId) assign.value = person.personId;
+    }
+
+    function loadAssignGroups() {
+      var sel = document.getElementById('pa-assign-group');
+      var base = apiBase();
+      if (!sel || !base) return;
+      fetch(base + '/api/groups', { method: 'GET', credentials: 'same-origin' })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { res: res, data: data };
+          });
+        })
+        .then(function (pack) {
+          var groups = (pack.res.ok && pack.data && pack.data.groups) || [];
+          var cur = sel.value;
+          sel.innerHTML = '<option value="">選擇群組…</option>';
+          for (var i = 0; i < groups.length; i++) {
+            var g = groups[i];
+            var opt = document.createElement('option');
+            opt.value = g.id || g.groupId || '';
+            opt.textContent = groupLabel({ name: g.name, type: g.type, groupId: opt.value });
+            sel.appendChild(opt);
+          }
+          if (cur) sel.value = cur;
+        })
+        .catch(function () {});
+    }
+
+    var listBtn = document.getElementById('pa-list-btn');
+    if (listBtn) {
+      listBtn.addEventListener('click', function () {
+        setStatus('pa-list-status', '載入中…', false);
+        postPa('/api/person-admin/member-list', {})
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              setStatus('pa-list-status', (pack.data && pack.data.error) || '載入失敗', true);
+              return;
+            }
+            var d = pack.data;
+            var counts = d.counts || {};
+            var msg =
+              '共 ' +
+              ((d.persons && d.persons.length) || 0) +
+              ' 人（未分組 ' +
+              (counts.ungrouped || 0) +
+              '、有群組 ' +
+              (counts.grouped || 0) +
+              '、不明 ' +
+              (counts.unknown || 0) +
+              '）' +
+              (d.truncated ? '；已達頁數上限' : '');
+            if (d.hint) msg += ' ' + d.hint;
+            setStatus('pa-list-status', msg, false);
+            var show = d.persons || [];
+            renderPersonTable(document.getElementById('pa-list-result'), show);
+            var raw = document.getElementById('pa-list-raw');
+            if (raw) {
+              raw.hidden = false;
+              raw.textContent = '原始回應（遮罩，第一頁）\n' + JSON.stringify(d.firstPageRaw || d, null, 2);
+            }
+          })
+          .catch(function (e) {
+            setStatus('pa-list-status', (e && e.message) || String(e), true);
+          });
+      });
+    }
+
+    var queryBtn = document.getElementById('pa-query-btn');
+    if (queryBtn) {
+      queryBtn.addEventListener('click', function () {
+        var id = ((document.getElementById('pa-query-id') || {}).value || '').trim();
+        setStatus('pa-query-status', '查詢中…', false);
+        postPa('/api/person-admin/query', { personId: id })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              setStatus('pa-query-status', (pack.data && pack.data.error) || '查詢失敗', true);
+              var box = document.getElementById('pa-query-result');
+              if (box) box.hidden = true;
+              return;
+            }
+            setStatus('pa-query-status', '已找到', false);
+            renderPersonCard(document.getElementById('pa-query-result'), pack.data.person);
+          })
+          .catch(function (e) {
+            setStatus('pa-query-status', (e && e.message) || String(e), true);
+          });
+      });
+    }
+
+    var scanBtn = document.getElementById('pa-scan-btn');
+    if (scanBtn) {
+      scanBtn.addEventListener('click', function () {
+        var from = ((document.getElementById('pa-scan-from') || {}).value || '').trim();
+        var to = ((document.getElementById('pa-scan-to') || {}).value || '').trim();
+        setStatus('pa-scan-status', '掃描中（只讀，可能需要一些時間）…', false);
+        postPa('/api/person-admin/scan', { from: from, to: to })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              setStatus('pa-scan-status', (pack.data && pack.data.error) || '掃描失敗', true);
+              return;
+            }
+            var d = pack.data;
+            setStatus(
+              'pa-scan-status',
+              '已檢查 ' + d.checked + ' 個編號，找到未分組／不明 ' + ((d.ungrouped && d.ungrouped.length) || 0) + ' 人。',
+              false
+            );
+            renderPersonTable(document.getElementById('pa-scan-result'), d.ungrouped || []);
+          })
+          .catch(function (e) {
+            setStatus('pa-scan-status', (e && e.message) || String(e), true);
+          });
+      });
+    }
+
+    var reloadG = document.getElementById('pa-assign-reload-groups');
+    if (reloadG) reloadG.addEventListener('click', loadAssignGroups);
+    loadAssignGroups();
+
+    var assignBtn = document.getElementById('pa-assign-btn');
+    if (assignBtn) {
+      assignBtn.addEventListener('click', function () {
+        var id = ((document.getElementById('pa-assign-id') || {}).value || '').trim();
+        var sel = document.getElementById('pa-assign-group');
+        var gid = sel ? sel.value : '';
+        var gname = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].text : gid;
+        if (!id || !gid) {
+          setStatus('pa-assign-status', '請填人員編號並選擇群組。', true);
+          return;
+        }
+        var ok = window.confirm(
+          '確定要把人員 #' + id + ' 指定到群組「' + gname + '」（#' + gid + '）？\n這會寫入 Central，且無法在此頁復原。'
+        );
+        if (!ok) {
+          setStatus('pa-assign-status', '已取消。', false);
+          return;
+        }
+        setStatus('pa-assign-status', '寫入中…', false);
+        postPa('/api/person-admin/assign', { personId: id, groupId: gid, confirm: true }, true)
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              setStatus('pa-assign-status', (pack.data && pack.data.error) || '指定失敗', true);
+              return;
+            }
+            setStatus('pa-assign-status', pack.data.message || '已更新', false);
+            var box = document.getElementById('pa-assign-result');
+            if (box) {
+              box.hidden = false;
+              if (pack.data.verified) renderPersonCard(box, pack.data.verified);
+              else box.textContent = JSON.stringify(pack.data, null, 2);
+            }
+          })
+          .catch(function (e) {
+            setStatus('pa-assign-status', (e && e.message) || String(e), true);
+          });
+      });
+    }
+  }
+
   window.FaceMePreview = {
     APP_VERSION: APP_VERSION,
     get STATEMENT_VERSION() { return STATEMENT_VERSION; },
@@ -1485,12 +1794,14 @@
     isPrivateLanPage: isPrivateLanPage,
     runConnectionTest: runConnectionTest,
     loadCentralSettingsUi: loadCentralSettingsUi,
-    isPagesHost: isPagesHost
+    isPagesHost: isPagesHost,
+    initPersonAdminPanel: initPersonAdminPanel
   };
 
   document.addEventListener('DOMContentLoaded', function () {
     var page = document.body && document.body.getAttribute('data-page');
     if (page === 'consent') initConsentPage();
     if (page === 'register') initRegisterPage();
+    initPersonAdminPanel();
   });
 })();

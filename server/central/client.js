@@ -31,6 +31,7 @@ const {
   DEFAULT_PATTERN_ID
 } = require('./groups');
 const { maskQcPayload } = require('./qc-explain');
+const { createPersonAdminClient } = require('./person-admin');
 const {
   buildTlsSocketOptions,
   sanitizeConnectOptions,
@@ -711,6 +712,13 @@ async function connectionProbe(options) {
   };
 }
 
+const personAdminApi = createPersonAdminClient({
+  upstream,
+  getBaseUrl: () => config.facemeBaseUrl,
+  FormData,
+  scanDelayMs: 80
+});
+
 module.exports = {
   signIn,
   snapshotQc,
@@ -719,6 +727,10 @@ module.exports = {
   probeGroups,
   createGroup,
   personImport,
+  listMembersWithoutGroup: personAdminApi.listMembersWithoutGroup,
+  queryPerson: personAdminApi.queryPerson,
+  scanUngroupedRange: personAdminApi.scanRange,
+  updatePersonGroup: personAdminApi.updatePersonGroup,
   postGroupWithEncoding,
   resetGroupBodyEncodingMemory,
   getRememberedGroupBodyEncoding,

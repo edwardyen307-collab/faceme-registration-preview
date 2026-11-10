@@ -31,6 +31,7 @@ const {
 const { assertLocalAdmin, localAdminToken } = require('../local-admin');
 const { phoneUrls, listenHost, FIREWALL_NOTE } = require('../lan-access');
 const { rebindListen, getHttpServer } = require('../http-bind');
+const { appendLog: appendPersonAdminLog } = require('../central/person-admin');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -416,4 +417,105 @@ router.post('/register', upload.single('image'), async (req, res, next) => {
   }
 });
 
+
+function personAdminJsonLimit() {
+  return express.json({ limit: '8kb' });
+}
+
+router.post('/person-admin/member-list', personAdminJsonLimit(), async (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: false });
+    assertCentralCredentials();
+    const token = await central.signIn();
+    const pack = await central.listMembersWithoutGroup(token);
+    res.json({ ok: true, ...pack });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/person-admin/query', personAdminJsonLimit(), async (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: false });
+    assertCentralCredentials();
+    const token = await central.signIn();
+    const person = await central.queryPerson(token, req.body && req.body.personId);
+    if (!person) {
+      const err = new Error('找不到這個人員編號');
+      err.code = 'PERSON_NOT_FOUND';
+      err.status = 404;
+      throw err;
+    }
+    res.json({ ok: true, person: person });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/person-admin/scan', personAdminJsonLimit(), async (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: false });
+    assertCentralCredentials();
+    const token = await central.signIn();
+    const pack = await central.scanUngroupedRange(
+      token,
+      req.body && req.body.from,
+      req.body && req.body.to
+    );
+    res.json({ ok: true, ...pack });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/person-admin/assign', personAdminJsonLimit(), async (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: true });
+    assertRealModeReady();
+    if (!req.body || req.body.confirm !== true) {
+      const err = new Error('請先確認要指定群組（confirm: true）');
+      err.code = 'CONFIRM_REQUIRED';
+      err.status = 400;
+      throw err;
+    }
+    const personId = req.body.personId;
+    const groupId = req.body.groupId;
+    const token = await central.signIn();
+    let groupName = null;
+    try {
+      const groups = await central.listGroups(token);
+      const g = (groups || []).find((x) => String(x.id) === String(groupId));
+      if (g) groupName = g.name || null;
+    } catch (_) {}
+    const updated = await central.updatePersonGroup(token, personId, groupId);
+    let verified = null;
+    try {
+      verified = await central.queryPerson(token, updated.personId || personId);
+    } catch (_) {}
+    appendPersonAdminLog({
+      action: 'assign',
+      personId: String(personId),
+      groupId: String(groupId),
+      groupName: groupName,
+      encoding: updated.encoding || null,
+      verifiedStatus: verified && verified.groupStatus
+    });
+    res.json({
+      ok: true,
+      personId: updated.personId || String(personId),
+      groupId: String(groupId),
+      groupName: groupName,
+      encoding: updated.encoding || null,
+      verified: verified,
+      message: verified
+        ? '已更新，复查群組狀態＝' + verified.groupStatus
+        : '已送出更新，但复查查詢失敗，請再用編號查一次。'
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+
 module.exports = router;
+

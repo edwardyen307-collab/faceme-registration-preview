@@ -8,7 +8,7 @@
 const os = require('os');
 const { config } = require('./config');
 
-const SETTINGS_PATH_PREFIXES = ['/api/local-settings'];
+const SETTINGS_PATH_PREFIXES = ['/api/local-settings', '/api/person-admin'];
 const SETTINGS_PATHS = { '/api/connection-test': true };
 const LAN_API_PATHS = {
   '/api/health': true,

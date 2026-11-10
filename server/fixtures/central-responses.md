@@ -115,3 +115,11 @@ Masked payload is also appended to `runtime/qc.log` and `runtime/upstream.log`.
 - `totalSize` is absolute count — if `results.length < totalSize`, request next `pageIndex`.
 - NORMAL groups may include `color` + `patternId`. Central rejects create when that pair is already used (`HTTP 400` «The set of color and pattern is already used…»).
 - Body encoding that works on live Central: **`application/x-www-form-urlencoded` (form)**; JSON → 415. Default try order is now **form → multipart → json**.
+
+
+## 找人／補群組（v2026-11-09n, API Document v8）
+
+- `POST /api/website/group/member/list` form: optional `groupId` (repeat), `pageIndex`, `pageSize`, `keyword`, `tagId`, `enrollType`. Response `{ results:[{ personId, name, group:{ groupId, name, type, ... } }], totalSize }`. **Omitting groupId to list ungrouped persons is UNDOCUMENTED.**
+- `POST /api/website/person/query` form: `personId`. `group` may be an object (as in member/list) or an array. **Ungrouped shape (null / [] / {} / missing) is UNDOCUMENTED.**
+- `POST /api/website/person/update` multipart: `personId`, optional `groupId`. Prefer this over member/move when the person has no fromGroupId. **Whether update replaces the existing group is UNDOCUMENTED.**
+- Thin-backend admin APIs are loopback-only (`/api/person-admin/*`), not exposed in LAN mode. Writes require real-mode dual flags + confirm.

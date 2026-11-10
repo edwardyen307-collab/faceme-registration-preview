@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09m**
+版本：**v2026-11-09n**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09m.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09n.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -28,7 +28,7 @@
 > 一鍵**不等于**已串上真實 Central 註冊成功。預設 `FACEME_REAL_MODE=0`、法務確認＝0；首次真實寫入仍需聲明定稿並自行啟用旗標。Central API 形狀**尚未**在此環境對真機驗證。
 
 
-## 用 iPhone（同一 Wi-Fi）開啟註冊頁（v2026-11-09m）
+## 用 iPhone（同一 Wi-Fi）開啟註冊頁（v2026-11-09n）
 
 預設只聽 `127.0.0.1`，手機連不到。需在**電腦本機頁**手動開啟「手機連線（區網）」：
 
@@ -73,7 +73,7 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 
 可選：`setup-and-start.ps1` 同樣只呼叫上述 Node 腳本，**不** Bypass。ZIP 的 Mark of the Web 請用「解除鎖定」，或直接用 `start.bat`。
 
-## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09m）
+## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09n）
 
 錯誤會展開底層原因。常見：
 - **ECONNREFUSED**：該 IP／埠沒有服務（`https://127.0.0.1`＝443 埠；Central 若在別的埠請寫 `:埠號`）
@@ -81,16 +81,16 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 - **EPROTO**：http／https 弄反
 詳見畫面訊息與 `runtime/upstream.log`。
 
-## 「聲明版本不符」怎麼辦（v2026-11-09m）
+## 「聲明版本不符」怎麼辦（v2026-11-09n）
 
 原因多半是：舊 `.env` 裡有 `FACEME_STATEMENT_VERSION=…`（建立 .env 時從舊 example 帶入），而網頁已更新。  
 現在程式以 `statement-version.json` 為準，**會忽略 .env 裡不同的覆寫值**（不自動改你的 .env）。建議刪除或註解該行後重開 `start.bat`，並重新整理瀏覽器。
 
-## TLS 與 IP 位址（v2026-11-09m）
+## TLS 與 IP 位址（v2026-11-09n）
 
 連線 `https://127.0.0.1`（或其它 IP）時**不會**再設定非法的 TLS `servername`（Node 禁止 SNI 為 IP）。憑證驗證預設仍開啟；若出現「憑證不被信任／名稱不符」，請改用憑證 SAN 上的主機名、匯入 CA，或僅在明白風險時設 `FACEME_SKIP_TLS_VERIFY=1`（不會自動略過）。
 
-## 略過自簽憑證（v2026-11-09m）
+## 略過自簽憑證（v2026-11-09n）
 
 本機版連線設定區有開關「**略過自簽憑證檢查（僅限本機 Central）**」。
 
@@ -132,7 +132,7 @@ npm test
 - 薄後端僅內網／本機試驗，勿對網際網路公開。
 - 規格見 `server/fixtures/`；**未**宣稱已對真實 Central 驗證通過。
 
-## QC 失敗原因（v2026-11-09m）
+## QC 失敗原因（v2026-11-09n）
 
 真實註冊若人臉品質檢查未通過，畫面會列出**白話原因與調整建議**（例如偵測到多張臉、光線太暗、臉偏轉），並可展開已遮罩的「技術細節」。
 
@@ -141,7 +141,7 @@ npm test
 - 欄位名稱依文件與常見別名**寬鬆比對**；Central 實際 swagger 欄位若不同，可對照 log 再改進解析。
 
 
-## QC 真實格式（v2026-11-09m）
+## QC 真實格式（v2026-11-09n）
 
 Central 實際回應（2026-11-09 觀察）：
 
@@ -153,7 +153,7 @@ Central 實際回應（2026-11-09 觀察）：
 - `condition` 各項：`true`＝該項通過、`false`＝不合格（才顯示原因）
 - 缺欄或非布林 → fail-closed「無法判讀」
 
-## 群組與匯入（v2026-11-09m）
+## 群組與匯入（v2026-11-09n）
 
 - 註冊頁**群組必填**：下拉載入 `GET /api/groups`（薄後端代打 `POST /api/website/group/list`，分頁；權杖不外露）。可用「測試讀取群組」。
 - 新群組：前端選顏色／圖示編號 → 薄後端 `POST /api/website/group/create`（`name`+`color`+`patternId`，不送 type）→ 取得 id（回應或再 list）→ 匯入。
@@ -162,3 +162,14 @@ Central 實際回應（2026-11-09 觀察）：
 - 先前「註冊成功但 Central 看不到人」極可能是群組欄位名稱不對或根本沒帶群組；現在改為官方 `groupId`。
 - HTTP 406 `Exists similar person` → 「此人已註冊過（相似人員 #id）」；detail 連結僅允許與 `FACEME_BASE_URL` 同主機。
 - 連線設定預設收合，狀態存在 localStorage。
+
+
+## 找人／補群組（v2026-11-09n）
+
+僅本機 `http://127.0.0.1:8443/`（區網模式不會開放這些 API）。展開「找人／補群組」：
+
+1. **列出未分群組的人**：試著不帶 groupId 呼叫 member/list。若中央只回已分組的人，請改用編號查詢或範圍掃描。
+2. **用編號查詢／範圍掃描**：只讀。詳細頁連結為 `https://<Central 主機>/user-detail?id=<編號>`。
+3. **指定群組**：選現有群組後確認。需 `FACEME_REAL_MODE=1` 且 `FACEME_STATEMENT_LEGAL_CONFIRMED=1`。只送 personId 與 groupId。
+
+尚未在真實 Central 驗證：不帶 groupId 的 list 是否含未分組者、query 的未分組形態、update 是否取代原群組。

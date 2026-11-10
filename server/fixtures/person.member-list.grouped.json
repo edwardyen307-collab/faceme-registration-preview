@@ -1,0 +1,21 @@
+{
+  "totalSize": 1,
+  "results": [
+    {
+      "personId": 1,
+      "name": "name1",
+      "employeeId": "E001",
+      "group": {
+        "groupId": 1,
+        "name": "VIP",
+        "type": "VIP",
+        "color": "#C00000",
+        "patternId": 1,
+        "tags": [],
+        "accessPeriodEnabled": true
+      },
+      "confidence": 0.8,
+      "similarity": 0.8
+    }
+  ]
+}

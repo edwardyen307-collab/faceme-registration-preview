@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09m</title>
+  <title>人臉資料蒐集個資聲明 · FaceMe 註冊預覽 v2026-11-09n</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="consent">
@@ -14,7 +14,7 @@
         <h1>人臉資料蒐集個資聲明</h1>
         <p>FaceMe 註冊前同意流程（靜態預覽）</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09m</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09n</span>
     </div>
   </header>
 
@@ -84,6 +84,54 @@
 
 
     
+        </div>
+      </details>
+    </section>
+
+    <section class="card person-admin-card" id="person-admin-card" hidden>
+      <details id="person-admin-details" class="settings-details">
+        <summary class="settings-summary">找人／補群組 <span class="settings-summary-hint">（僅本機 127.0.0.1，點此展開）</span></summary>
+        <div class="settings-body">
+          <p class="hint">用來找出可能被移出群組後「失踪」的人，再補回群組。讀取不必開真實寫入；指定群組會寫入 Central，需雙旗標與確認。</p>
+
+          <h3 class="settings-sub">列出未分群組的人</h3>
+          <p class="hint">呼叫 member/list 且不帶 groupId（Central 是否會回未分組的人，尚未實測）。</p>
+          <button type="button" class="btn btn-secondary" id="pa-list-btn">列出未分群組的人</button>
+          <div class="api-status" id="pa-list-status" aria-live="polite"></div>
+          <div id="pa-list-result" class="pa-result" hidden></div>
+          <pre class="conn-result" id="pa-list-raw" hidden></pre>
+
+          <h3 class="settings-sub">用編號查詢</h3>
+          <div class="api-row">
+            <label class="sr-only" for="pa-query-id">人員編號</label>
+            <input type="text" id="pa-query-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
+            <button type="button" class="btn btn-secondary" id="pa-query-btn">查詢</button>
+          </div>
+          <div class="api-status" id="pa-query-status" aria-live="polite"></div>
+          <div id="pa-query-result" class="pa-result" hidden></div>
+
+          <h3 class="settings-sub">範圍掃描（只讀）</h3>
+          <p class="hint">依序查詢編號 A 到 B（一次最多 200 個，略過不存在的編號），列出未分組／狀態不明的人。</p>
+          <div class="api-row">
+            <input type="text" id="pa-scan-from" inputmode="numeric" placeholder="從" autocomplete="off" />
+            <input type="text" id="pa-scan-to" inputmode="numeric" placeholder="到" autocomplete="off" />
+            <button type="button" class="btn btn-secondary" id="pa-scan-btn">範圍掃描</button>
+          </div>
+          <div class="api-status" id="pa-scan-status" aria-live="polite"></div>
+          <div id="pa-scan-result" class="pa-result" hidden></div>
+
+          <h3 class="settings-sub">指定群組（寫入 Central）</h3>
+          <p class="hint">對查到的人呼叫 person/update，只送 personId 與 groupId。需 FACEME_REAL_MODE 與法務確認皆為 1。</p>
+          <div class="api-row">
+            <input type="text" id="pa-assign-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
+            <select id="pa-assign-group">
+              <option value="">選擇群組…</option>
+            </select>
+            <button type="button" class="btn btn-secondary" id="pa-assign-reload-groups">重新載入群組</button>
+            <button type="button" class="btn btn-primary" id="pa-assign-btn">指定群組</button>
+          </div>
+          <div class="api-status" id="pa-assign-status" aria-live="polite"></div>
+          <div id="pa-assign-result" class="pa-result" hidden></div>
         </div>
       </details>
     </section>
@@ -195,7 +243,7 @@
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09m
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09n
   </footer>
   <script src="app.js"></script>
 </body>
