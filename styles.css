@@ -27,6 +27,9 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -576,3 +579,17 @@ textarea:focus-visible,
 }
 .color-swatch[aria-selected="true"] { border-color: #111; box-shadow: 0 0 0 2px #fff inset; }
 .group-create-extras select { max-width: 8rem; }
+
+/* LAN / iPhone (v2026-11-09m) */
+.lan-access-row { margin-top: 1rem; }
+.lan-phone-urls { margin-top: 0.5rem; }
+.lan-url-list { margin: 0.3rem 0 0; padding-left: 1.2rem; word-break: break-all; }
+.lan-url-list code { font-size: 0.95rem; }
+@media (max-width: 559px) {
+  .app-header .inner { flex-wrap: wrap; }
+  .api-row .btn { flex: 1 1 auto; }
+  .field input[type="text"],
+  .field input[type="file"],
+  .api-row input[type="url"] { font-size: 16px; }
+  .btn { min-height: 44px; }
+}

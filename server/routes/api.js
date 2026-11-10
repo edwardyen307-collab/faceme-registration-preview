@@ -8,6 +8,7 @@ const {
   assertCentralCredentials,
   setFacemeBaseUrl,
   setSkipTlsVerify,
+  setLanAccess,
   canEnableSkipTlsVerify
 } = require('../config');
 const { issueTicket, consumeTicket } = require('../consent');
@@ -24,9 +25,12 @@ const {
   validateCentralBaseUrl,
   upsertFacemeBaseUrl,
   upsertSkipTlsVerify,
+  upsertLanAccess,
   centralHostIsLoopback
 } = require('../env-file');
 const { assertLocalAdmin, localAdminToken } = require('../local-admin');
+const { phoneUrls, listenHost, FIREWALL_NOTE } = require('../lan-access');
+const { rebindListen, getHttpServer } = require('../http-bind');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -51,6 +55,7 @@ router.get('/health', (req, res) => {
     legalConfirmed: config.legalConfirmed,
     // Never expose account/password/base secrets beyond "configured?" booleans
     upstreamConfigured: Boolean(config.facemeBaseUrl && config.facemeAccount),
+    lanAccess: Boolean(config.lanAccess),
     note:
       '本機薄後端存活檢查（非 Central 連線測試）。statementVersion 來自 statement-version.json（與個資聲明全文綁定，不隨 appVersion 變）。'
   });
@@ -68,6 +73,10 @@ router.get('/local-settings', (req, res, next) => {
       centralBaseUrl: config.facemeBaseUrl || '',
       skipTlsVerify: Boolean(config.skipTlsVerify),
       canEnableSkipTlsVerify: canEnableSkipTlsVerify(config.facemeBaseUrl),
+      lanAccess: Boolean(config.lanAccess),
+      listenHost: listenHost(),
+      phoneUrls: config.lanAccess ? phoneUrls(config.port) : [],
+      lanFirewallNote: FIREWALL_NOTE,
       localAdminToken: localAdminToken,
       envDiagnostics: {
         envPath: d.envPath,
@@ -147,6 +156,62 @@ router.put('/local-settings/skip-tls-verify', express.json({ limit: '4kb' }), (r
       note: enabled
         ? '已開啟略過自簽憑證（僅本機 Central）。有中間人風險；連線測試的 skipTlsVerify 應為 true。'
         : '已關閉略過自簽憑證，恢復驗證。'
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+
+
+router.put('/local-settings/lan-access', express.json({ limit: '4kb' }), async (req, res, next) => {
+  try {
+    assertLocalAdmin(req, { mutate: true });
+    const enabled = Boolean(req.body && req.body.enabled === true);
+    const written = upsertLanAccess(enabled);
+    setLanAccess(enabled);
+    const wantHost = listenHost();
+    let rebound = false;
+    let restartRequired = false;
+    let rebindError = null;
+    const server = getHttpServer();
+    if (!server) {
+      restartRequired = true;
+    } else {
+      // Reuse the request app (same Express instance)
+      const expressApp = req.app;
+      const result = await rebindListen(expressApp, config.port, wantHost);
+      rebound = Boolean(result.rebound && result.ok);
+      restartRequired = Boolean(result.restartRequired) || !result.ok;
+      rebindError = result.error || null;
+    }
+    const urls = enabled ? phoneUrls(config.port) : [];
+    let note;
+    if (enabled && restartRequired) {
+      note = '已寫入 .env（FACEME_LAN_ACCESS=1）。請關閉後重新執行 start.bat，讓伺服器改聽 0.0.0.0。';
+    } else if (enabled) {
+      note =
+        '已開啟手機連線（區網），本機改聽 0.0.0.0。請用下列網址在同一 Wi-Fi 的 iPhone 開啟。' +
+        (urls.length ? ' ' + urls.join(' ') : '') +
+        ' ' +
+        FIREWALL_NOTE;
+    } else if (restartRequired) {
+      note = '已關閉區網連線並寫入 .env。請重開 start.bat，讓伺服器只聽 127.0.0.1。';
+    } else {
+      note = '已關閉手機連線（區網），僅本機 127.0.0.1 可連。';
+    }
+    res.json({
+      ok: true,
+      lanAccess: Boolean(config.lanAccess),
+      listenHost: wantHost,
+      phoneUrls: urls,
+      applied: rebound ? 'immediate' : 'env-written',
+      rebound: rebound,
+      restartRequired: restartRequired,
+      rebindError: rebindError,
+      bak: Boolean(written.bak),
+      lanFirewallNote: FIREWALL_NOTE,
+      note: note
     });
   } catch (e) {
     next(e);

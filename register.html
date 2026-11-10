@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-09l</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-09m</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-page="register">
@@ -14,7 +14,7 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09l</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09m</span>
     </div>
   </header>
 
@@ -66,6 +66,20 @@
         <div class="api-status" id="skip-tls-status" aria-live="polite"></div>
       </div>
       <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
+
+      <div class="lan-access-row" id="lan-access-row" hidden>
+        <h3 class="settings-sub">③ 手機連線（區網，預設關閉）</h3>
+        <label class="checkbox-row" for="lan-access-toggle">
+          <input type="checkbox" id="lan-access-toggle" disabled />
+          <span>允許同一 Wi-Fi 的手機開啟此註冊頁</span>
+        </label>
+        <p class="hint" id="lan-access-hint">
+          僅能從本機（127.0.0.1）開關。開啟後伺服器改聽區網，手機用 <code>http://電腦區網IP:埠/</code> 開啟（Safari 用 HTTP 即可，拍照不需 HTTPS）。設定與 .env 仍只准本機修改。第一次開啟時 Windows 可能跳出「Windows 安全性警訊」，請只允許「私人網路」，不要勾選「公用網路」。用完請關閉。
+        </p>
+        <div id="lan-phone-urls" class="lan-phone-urls" hidden></div>
+        <div class="api-status" id="lan-access-status" aria-live="polite"></div>
+      </div>
+
 
     
         </div>
@@ -192,7 +206,7 @@
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09l
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09m
   </footer>
   <script src="app.js"></script>
 </body>

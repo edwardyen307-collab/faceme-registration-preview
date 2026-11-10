@@ -12,7 +12,7 @@ echo %DATE% %TIME% boot dir=%CD%>> "runtime\bat-boot.log"
 
 echo.
 echo ========================================
-echo  FaceMe local start  v2026-11-09l
+echo  FaceMe local start  v2026-11-09m
 echo ========================================
 echo  Folder: %CD%
 echo.

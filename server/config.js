@@ -48,6 +48,7 @@ const config = {
   facemeAccount: process.env.FACEME_ACCOUNT || '',
   facemePassword: process.env.FACEME_PASSWORD || '',
   skipTlsVerify: bool('FACEME_SKIP_TLS_VERIFY', false),
+  lanAccess: bool('FACEME_LAN_ACCESS', false),
   consentTtlSeconds: int('CONSENT_TTL_SECONDS', 600),
   consentLogPath:
     process.env.CONSENT_LOG_PATH ||
@@ -58,9 +59,12 @@ const config = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60000),
   rateLimitMax: int('RATE_LIMIT_MAX', 60),
   publicRoot: path.join(__dirname, '..'),
-  appVersion: 'v2026-11-09l',
+  appVersion: 'v2026-11-09m',
   envDiagnostics
 };
+
+// LAN access (opt-in): listen on 0.0.0.0 only when FACEME_LAN_ACCESS=1. Ignore bare HOST=0.0.0.0.
+config.host = config.lanAccess ? '0.0.0.0' : '127.0.0.1';
 
 // If Central is not loopback, never keep skip TLS on at runtime.
 if (config.skipTlsVerify && !centralHostIsLoopback(config.facemeBaseUrl)) {
@@ -121,6 +125,13 @@ function canEnableSkipTlsVerify(baseUrl) {
   return centralHostIsLoopback(baseUrl || config.facemeBaseUrl);
 }
 
+function setLanAccess(enabled) {
+  const on = Boolean(enabled);
+  config.lanAccess = on;
+  process.env.FACEME_LAN_ACCESS = on ? '1' : '0';
+  config.host = on ? '0.0.0.0' : '127.0.0.1';
+}
+
 module.exports = {
   config,
   assertRealModeReady,
@@ -128,6 +139,7 @@ module.exports = {
   loadDotEnv,
   setFacemeBaseUrl,
   setSkipTlsVerify,
+  setLanAccess,
   canEnableSkipTlsVerify,
   statementEnvInfo,
   envDiagnostics

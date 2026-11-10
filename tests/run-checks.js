@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09l', /v2026-11-09l/.test(text));
+  ok('start.bat version banner 09m', /v2026-11-09m/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09l in pages', /v2026-11-09l/.test(indexHtml) && /v2026-11-09l/.test(registerHtml));
+ok('version v2026-11-09m in pages', /v2026-11-09m/.test(indexHtml) && /v2026-11-09m/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -82,8 +82,14 @@ ok('README notes 127.0.0.1 not guaranteed for Central', /不保證/.test(readme)
 ok('same-origin + conn test UI', /api-base-same-origin/.test(indexHtml) && /btn-conn-test/.test(indexHtml));
 ok('skip-tls toggle in pages', /skip-tls-toggle/.test(indexHtml) && /skip-tls-toggle/.test(registerHtml));
 ok('skip-tls label text', /略過自簽憑證檢查/.test(indexHtml));
+ok('LAN access toggle in pages', /lan-access-toggle/.test(indexHtml) && /lan-access-toggle/.test(registerHtml) && /手機連線（區網/.test(indexHtml));
+ok('app.js lan-access API', /local-settings\/lan-access/.test(js) && /isPrivateLanPage/.test(js));
+ok('viewport meta for iPhone', /width=device-width/.test(indexHtml) && /width=device-width/.test(registerHtml));
+ok('capture=user still used (no getUserMedia)', /capture="user"/.test(registerHtml) && !/getUserMedia/.test(js));
+ok('env example LAN off by default', !/^FACEME_LAN_ACCESS=1$/m.test(envExample) && /FACEME_LAN_ACCESS/.test(envExample));
+ok('README phone LAN section', /手機連線（區網）/.test(readme) && /私人網路/.test(readme));
 ok('QC failure UI helpers in app.js', /showQcFailure/.test(js) && /qc-reason-list/.test(js));
-ok('footer updater present', /updateAppFooter/.test(js) && /本機版 · 已連接本機後端/.test(js));
+ok('footer updater present', /updateAppFooter/.test(js) && /本機版/.test(js) && /已連接本機後端/.test(js));
 ok('structured failure handles import', /IMPORT_PERSON_ID_MISSING/.test(js));
 
 ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
@@ -97,6 +103,62 @@ ok('groups module exists', fs.existsSync(path.join(root, 'server/central/groups.
 ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js));
 
 ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
+
+(function lanAccessUnitTests() {
+  var lan = require(path.join(root, 'server/lan-access'));
+  ok('RFC1918 192.168', lan.isPrivateLanIpv4('192.168.32.10') === true);
+  ok('RFC1918 10/8', lan.isPrivateLanIpv4('10.1.2.3') === true);
+  ok('RFC1918 172.16/12', lan.isPrivateLanIpv4('172.16.0.1') === true && lan.isPrivateLanIpv4('172.31.255.1') === true);
+  ok('172.15 not RFC1918', lan.isPrivateLanIpv4('172.15.0.1') === false);
+  ok('public 8.8.8.8 not private', lan.isPrivateLanIpv4('8.8.8.8') === false);
+  ok('classify mapped IPv4', lan.classifyIp('::ffff:192.168.1.5') === 'private');
+  ok('classify loopback', lan.classifyIp('127.0.0.1') === 'loopback' && lan.classifyHost('localhost:8443') === 'loopback');
+  ok('classify public host', lan.classifyHost('8.8.8.8:8443') === 'public');
+  ok('health is LAN-allowed path', lan.isLanAllowedPath('/api/health') && lan.isLanAllowedPath('/api/register') && lan.isLanAllowedPath('/api/groups') && lan.isLanAllowedPath('/api/consent'));
+  ok('settings not LAN-allowed', lan.isSettingsPath('/api/local-settings') && lan.isSettingsPath('/api/local-settings/lan-access') && lan.isSettingsPath('/api/connection-test') && !lan.isLanAllowedPath('/api/local-settings'));
+  var { config: cfgLan } = require(path.join(root, 'server/config'));
+  var prevLan = cfgLan.lanAccess;
+  cfgLan.lanAccess = false;
+  var off = lan.evaluateAccess({
+    url: '/api/health',
+    headers: { host: '192.168.1.8:8443' },
+    socket: { remoteAddress: '127.0.0.1' }
+  });
+  ok('evaluate LAN off rejects LAN Host', off.ok === false && off.code === 'LAN_DISABLED');
+  cfgLan.lanAccess = true;
+  var on = lan.evaluateAccess({
+    url: '/api/health',
+    headers: { host: '192.168.1.8:8443' },
+    socket: { remoteAddress: '192.168.1.20' }
+  });
+  ok('evaluate LAN on allows health', on.ok === true && on.scope === 'lan');
+  var st = lan.evaluateAccess({
+    url: '/api/local-settings',
+    headers: { host: '192.168.1.8:8443' },
+    socket: { remoteAddress: '192.168.1.20' }
+  });
+  ok('evaluate settings still denied on LAN', st.ok === false && st.code === 'NOT_LOOPBACK');
+  var pub = lan.evaluateAccess({
+    url: '/api/health',
+    headers: { host: '8.8.8.8:8443' },
+    socket: { remoteAddress: '192.168.1.20' }
+  });
+  ok('evaluate public Host denied', pub.ok === false && pub.code === 'PUBLIC_IP_DENIED');
+  var pubR = lan.evaluateAccess({
+    url: '/api/health',
+    headers: { host: '192.168.1.8:8443' },
+    socket: { remoteAddress: '8.8.8.8' }
+  });
+  ok('evaluate public remote denied', pubR.ok === false && pubR.code === 'PUBLIC_IP_DENIED');
+  var xo = lan.evaluateAccess({
+    url: '/api/health',
+    headers: { host: '192.168.1.8:8443', origin: 'https://evil.example' },
+    socket: { remoteAddress: '192.168.1.20' }
+  });
+  ok('evaluate cross-site origin denied', xo.ok === false && xo.code === 'BAD_ORIGIN');
+  cfgLan.lanAccess = prevLan;
+})();
+
 ok('load-dotenv module exists', fs.existsSync(path.join(root, 'server/load-dotenv.js')));
 
 ok('gitignore .env', /\.env/.test(read('.gitignore')));
@@ -648,7 +710,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09l', config.appVersion === 'v2026-11-09l');
+  ok('appVersion 09m', config.appVersion === 'v2026-11-09m');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -698,7 +760,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09l', health.status === 200 && health.json.appVersion === 'v2026-11-09l');
+  ok('health version 09m', health.status === 200 && health.json.appVersion === 'v2026-11-09m');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -983,7 +1045,7 @@ async function httpIntegration() {
   centralG.listGroups = prevList;
   centralG.signIn = prevSign;
 
-  // --- group body encoding: JSON 415 → multipart success (v2026-11-09l) ---
+  // --- group body encoding: JSON 415 → multipart success (v2026-11-09m) ---
   var groupsEnc = require(path.join(root, 'server/central/groups'));
   var centralEnc = require(path.join(root, 'server/central/client'));
   var cfgEnc = require(path.join(root, 'server/config'));
@@ -1041,7 +1103,7 @@ async function httpIntegration() {
   // restore signIn if we overwrote (prevSign already restored above; re-stub only if needed later)
   centralEnc.signIn = prevSign;
 
-  // --- QC fail reasons on /api/register (v2026-11-09l) ---
+  // --- QC fail reasons on /api/register (v2026-11-09m) ---
   var adaptersHttp = require(path.join(root, 'server/central/adapters'));
   var cfgMod = require(path.join(root, 'server/config'));
   var centralMod = require(path.join(root, 'server/central/client'));
@@ -1139,7 +1201,7 @@ async function httpIntegration() {
   cfgMod.config.legalConfirmed = prevLegal;
   cfgMod.config.realModeEnabled = prevReal;
 
-  // --- skip TLS verify API (v2026-11-09l) ---
+  // --- skip TLS verify API (v2026-11-09m) ---
   ok('local-settings exposes skipTlsVerify', typeof ls.json.skipTlsVerify === 'boolean');
   ok('local-settings exposes envDiagnostics', ls.json.envDiagnostics && typeof ls.json.envDiagnostics.envFound === 'boolean');
   ok('local-settings no secret values in diag', !/test-password|FACEME_PASSWORD=/.test(JSON.stringify(ls.json.envDiagnostics || {})));
@@ -1302,7 +1364,55 @@ async function httpIntegration() {
 
   // launcher helpers
   var launch = require(path.join(root, 'scripts/windows-launcher.js'));
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09l');
+
+  // --- LAN access Host gate (v2026-11-09m) ---
+  function reqHost(method, urlPath, hostHeader, extraHeaders, bodyObj) {
+    var body = bodyObj ? JSON.stringify(bodyObj) : null;
+    var headers = Object.assign({ Host: hostHeader }, extraHeaders || {});
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(body);
+    }
+    return new Promise(function (resolve, reject) {
+      var r = http.request(
+        { hostname: '127.0.0.1', port: port, path: urlPath, method: method, headers: headers },
+        function (res) {
+          var chunks = [];
+          res.on('data', function (c) { chunks.push(c); });
+          res.on('end', function () {
+            var text = Buffer.concat(chunks).toString('utf8');
+            var json = null;
+            try { json = JSON.parse(text); } catch (_) {}
+            resolve({ status: res.statusCode, json: json, text: text });
+          });
+        }
+      );
+      r.on('error', reject);
+      if (body) r.write(body);
+      r.end();
+    });
+  }
+  var cfgLanHttp = require(path.join(root, 'server/config'));
+  var prevLanHttp = cfgLanHttp.config.lanAccess;
+  cfgLanHttp.config.lanAccess = false;
+  var lanOffRes = await reqHost('GET', '/api/health', '192.168.32.10:' + port);
+  ok('LAN off rejects LAN Host', lanOffRes.status === 403 && lanOffRes.json && lanOffRes.json.code === 'LAN_DISABLED');
+  cfgLanHttp.config.lanAccess = true;
+  var lanOnRes = await reqHost('GET', '/api/health', '192.168.32.10:' + port);
+  ok('LAN on allows 192.168 health', lanOnRes.status === 200 && lanOnRes.json && lanOnRes.json.ok === true && lanOnRes.json.lanAccess === true);
+  var lanConsent = await reqHost('POST', '/api/consent', '192.168.32.10:' + port, { Origin: 'http://192.168.32.10:' + port }, { agreed: false });
+  ok('LAN on allows consent path (validation still applies)', lanConsent.status === 400 && lanConsent.json && lanConsent.json.code !== 'LAN_DISABLED' && lanConsent.json.code !== 'PUBLIC_IP_DENIED');
+  var lanSet = await reqHost('GET', '/api/local-settings', '192.168.32.10:' + port);
+  ok('LAN on still rejects settings', lanSet.status === 403 && lanSet.json && (lanSet.json.code === 'NOT_LOOPBACK' || lanSet.json.code === 'BAD_HOST'));
+  var lanConn = await reqHost('POST', '/api/connection-test', '192.168.32.10:' + port, { 'Content-Type': 'application/json' }, { attemptLogin: false });
+  ok('LAN on still rejects connection-test', lanConn.status === 403 && lanConn.json && (lanConn.json.code === 'NOT_LOOPBACK' || lanConn.json.code === 'LAN_PATH_DENIED' || lanConn.json.code === 'BAD_HOST'));
+  var pubRes = await reqHost('GET', '/api/health', '8.8.8.8:' + port);
+  ok('public IP Host rejected', pubRes.status === 403 && pubRes.json && pubRes.json.code === 'PUBLIC_IP_DENIED');
+  var xoRes = await reqHost('GET', '/api/health', '192.168.32.10:' + port, { Origin: 'https://evil.example' });
+  ok('LAN cross-site Origin rejected', xoRes.status === 403 && xoRes.json && xoRes.json.code === 'BAD_ORIGIN');
+  cfgLanHttp.config.lanAccess = prevLanHttp;
+
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09m');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09l';
+  var APP_VERSION = 'v2026-11-09m';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -160,11 +160,16 @@
       footer.textContent = 'FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · ' + ver;
       return;
     }
-    if (isLocalLoopbackPage() && getApiBase()) {
+    if ((isLocalLoopbackPage() || isPrivateLanPage()) && getApiBase()) {
       var realLabel =
         cachedRealModeEnabled === true ? '開' : cachedRealModeEnabled === false ? '關' : '查詢中';
       footer.textContent =
-        'FaceMe 註冊預覽 · 本機版 · 已連接本機後端 · 真實模式 ' + realLabel + ' · ' + ver;
+        'FaceMe 註冊預覽 · ' +
+        (isPrivateLanPage() ? '區網版' : '本機版') +
+        ' · 已連接本機後端 · 真實模式 ' +
+        realLabel +
+        ' · ' +
+        ver;
       return;
     }
     if (getApiBase()) {
@@ -282,18 +287,42 @@
     }
   }
 
+  function isPrivateLanHostname(h) {
+    var host = String(h || '');
+    var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+    if (!m) return false;
+    var a = Number(m[1]), b = Number(m[2]), c = Number(m[3]), d = Number(m[4]);
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+
+  function isPrivateLanPage() {
+    try {
+      return isPrivateLanHostname(location.hostname);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function applyLocalOneClickDefaults() {
-    if (!isLocalLoopbackPage()) return;
     var params;
     try {
       params = new URLSearchParams(location.search || '');
     } catch (e) {
       params = null;
     }
-    if (params && params.get('local') === '1') {
+    if (isLocalLoopbackPage() && params && params.get('local') === '1') {
       // One-click start: force same-origin backend mode (clear stale empty mock confusion)
       setApiBase(location.origin);
       return;
+    }
+    // iPhone / LAN: page is already served by the thin backend — use same origin
+    if (isPrivateLanPage() && location.protocol === 'http:') {
+      setApiBase(location.origin);
     }
   }
 
@@ -420,6 +449,48 @@
       }
     }
 
+    var lanRow = document.getElementById('lan-access-row');
+    var lanToggle = document.getElementById('lan-access-toggle');
+    var lanStatus = document.getElementById('lan-access-status');
+    var lanUrls = document.getElementById('lan-phone-urls');
+    var lanHint = document.getElementById('lan-access-hint');
+
+    function flashLan(msg, isError) {
+      if (!lanStatus) return;
+      lanStatus.textContent = msg || '';
+      lanStatus.className = 'api-status' + (isError ? ' error' : '');
+    }
+
+    function applyLanUi(data) {
+      if (lanRow) lanRow.hidden = false;
+      if (lanToggle) {
+        lanToggle.disabled = false;
+        lanToggle.checked = !!(data && data.lanAccess);
+      }
+      if (lanUrls) {
+        var urls = (data && data.phoneUrls) || [];
+        if (data && data.lanAccess && urls.length) {
+          lanUrls.hidden = false;
+          lanUrls.innerHTML =
+            '<p class="hint" style="margin-top:0">請在同一 Wi-Fi 的 iPhone Safari 開啟（HTTP 即可）：</p>' +
+            '<ul class="lan-url-list">' +
+            urls
+              .map(function (u) {
+                return '<li><code>' + String(u).replace(/</g, '') + '</code></li>';
+              })
+              .join('') +
+            '</ul>';
+        } else if (data && data.lanAccess) {
+          lanUrls.hidden = false;
+          lanUrls.innerHTML =
+            '<p class="hint">已開啟，但目前找不到區網 IPv4。請確認電腦已連上 Wi-Fi 後重開 start.bat。</p>';
+        } else {
+          lanUrls.hidden = true;
+          lanUrls.innerHTML = '';
+        }
+      }
+    }
+
     if (!isLocalLoopbackPage() || isPagesHost()) {
       setEnabled(false);
       if (only) {
@@ -451,6 +522,7 @@
           input.value = pack.data.centralBaseUrl || '';
           setEnabled(true);
           applySkipUi(pack.data);
+          applyLanUi(pack.data);
           flashC('已載入伺服器 FACEME_BASE_URL（不含帳密）。', false);
         })
         .catch(function (e) {
@@ -551,6 +623,50 @@
           .catch(function (e) {
             skipToggle.checked = !want;
             flashSkip('更新失敗：' + ((e && e.message) || e), true);
+          });
+      });
+    }
+
+    if (lanToggle) {
+      lanToggle.addEventListener('change', function () {
+        var base = getApiBase() || location.origin;
+        if (!localAdminToken) {
+          flashLan('尚未取得本機管理 token，請先重新載入。', true);
+          lanToggle.checked = !lanToggle.checked;
+          return;
+        }
+        var want = !!lanToggle.checked;
+        flashLan(want ? '開啟區網連線中…' : '關閉區網連線中…', false);
+        fetch(base + '/api/local-settings/lan-access', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Faceme-Local-Token': localAdminToken
+          },
+          body: JSON.stringify({ enabled: want })
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data };
+            });
+          })
+          .then(function (pack) {
+            if (!pack.res.ok) {
+              lanToggle.checked = !want;
+              flashLan((pack.data && pack.data.error) || '更新失敗', true);
+              return;
+            }
+            applyLanUi(pack.data);
+            var msg = pack.data.note || '已更新';
+            if (pack.data.restartRequired) {
+              msg += ' 請重開 start.bat。';
+            }
+            flashLan(msg, false);
+          })
+          .catch(function (e) {
+            lanToggle.checked = !want;
+            flashLan('更新失敗：' + ((e && e.message) || e), true);
           });
       });
     }
@@ -1366,6 +1482,7 @@
     initSettingsCollapse: initSettingsCollapse,
     applyLocalOneClickDefaults: applyLocalOneClickDefaults,
     isLocalLoopbackPage: isLocalLoopbackPage,
+    isPrivateLanPage: isPrivateLanPage,
     runConnectionTest: runConnectionTest,
     loadCentralSettingsUi: loadCentralSettingsUi,
     isPagesHost: isPagesHost

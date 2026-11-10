@@ -136,6 +136,10 @@ function upsertSkipTlsVerify(enabled) {
   return upsertEnvKey('FACEME_SKIP_TLS_VERIFY', enabled ? '1' : '0');
 }
 
+function upsertLanAccess(enabled) {
+  return upsertEnvKey('FACEME_LAN_ACCESS', enabled ? '1' : '0');
+}
+
 module.exports = {
   ENV_PATH,
   BAK_PATH,
@@ -146,5 +150,6 @@ module.exports = {
   readEnvText,
   upsertEnvKey,
   upsertFacemeBaseUrl,
-  upsertSkipTlsVerify
+  upsertSkipTlsVerify,
+  upsertLanAccess
 };

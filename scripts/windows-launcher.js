@@ -13,7 +13,7 @@ const http = require('http');
 const { spawn, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const APP_VERSION = 'v2026-11-09l';
+const APP_VERSION = 'v2026-11-09m';
 const MIN_NODE_MAJOR = 18;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8443;
@@ -113,7 +113,8 @@ function envPresenceSummary(env) {
     host: env.HOST || DEFAULT_HOST,
     port: env.PORT || String(DEFAULT_PORT),
     realMode: env.FACEME_REAL_MODE || '0',
-    legal: env.FACEME_STATEMENT_LEGAL_CONFIRMED || '0'
+    legal: env.FACEME_STATEMENT_LEGAL_CONFIRMED || '0',
+    lanAccess: env.FACEME_LAN_ACCESS || '0'
   };
 }
 
@@ -262,6 +263,23 @@ function httpGetJson(url, timeoutMs) {
   });
 }
 
+
+function printLanUrls(port) {
+  try {
+    const lan = require(path.join(ROOT, 'server', 'lan-access'));
+    const urls = lan.phoneUrls(port);
+    log('LAN access ON. Phone URL(s) on the same Wi-Fi:');
+    if (urls.length) {
+      urls.forEach((u) => log('  ' + u));
+    } else {
+      log('  (no RFC1918 IPv4 found — check the Wi-Fi adapter)');
+    }
+    log(lan.FIREWALL_NOTE);
+  } catch (e) {
+    log('LAN access ON, but could not list phone URLs: ' + ((e && e.message) || e));
+  }
+}
+
 function openBrowser(url) {
   log('Opening browser: ' + url);
   if (process.platform === 'win32') {
@@ -336,10 +354,12 @@ async function main() {
   ensureEnv();
 
   const env = readEnvFile(path.join(ROOT, '.env'));
-  const host = env.HOST || DEFAULT_HOST;
+  const lanOn = env.FACEME_LAN_ACCESS === '1' || /^true$/i.test(env.FACEME_LAN_ACCESS || '');
+  // Health + browser always use loopback. LAN flag binds 0.0.0.0 in the Node server, not here.
+  const host = DEFAULT_HOST;
   const port = Number.parseInt(env.PORT || String(DEFAULT_PORT), 10) || DEFAULT_PORT;
   const pageUrl = 'http://' + host + ':' + port + LOCAL_URL_PATH;
-  diag('listen target host=' + host + ' port=' + port);
+  diag('listen probe host=' + host + ' port=' + port + ' lanAccess=' + (lanOn ? '1' : '0'));
 
   if (needNpmCi()) {
     try {
@@ -356,6 +376,7 @@ async function main() {
     log('Service already running (' + APP_VERSION + '). Not starting a second copy.');
     openBrowser(pageUrl);
     log('Local URL (HTTP): ' + pageUrl);
+    if (lanOn) printLanUrls(port);
     return;
   }
   if (existing.state === 'foreign') {
@@ -403,6 +424,7 @@ async function main() {
   log('health OK: appVersion=' + ready.health.appVersion);
   openBrowser(pageUrl);
   log('Local URL (HTTP): ' + pageUrl);
+  if (lanOn) printLanUrls(port);
   log('Keep this window open to see server logs. Closing it may stop the service.');
 
   process.on('SIGINT', () => {

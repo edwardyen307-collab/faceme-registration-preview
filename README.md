@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09l**
+版本：**v2026-11-09m**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09l.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09m.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -26,6 +26,18 @@
 3. 瀏覽器開啟（一鍵會試著自動開）：**http://127.0.0.1:8443/?local=1**（本機 **HTTP**，不是 HTTPS）
 
 > 一鍵**不等于**已串上真實 Central 註冊成功。預設 `FACEME_REAL_MODE=0`、法務確認＝0；首次真實寫入仍需聲明定稿並自行啟用旗標。Central API 形狀**尚未**在此環境對真機驗證。
+
+
+## 用 iPhone（同一 Wi-Fi）開啟註冊頁（v2026-11-09m）
+
+預設只聽 `127.0.0.1`，手機連不到。需在**電腦本機頁**手動開啟「手機連線（區網）」：
+
+1. 在電腦用 `http://127.0.0.1:8443/?local=1` 開啟，展開「連線設定」，勾選 **手機連線（區網）**。
+2. 若提示請重開 `start.bat`，先關掉舊視窗再雙擊一次。命令視窗會印出手機網址，例如 `http://192.168.x.x:8443/`（以畫面上列的為準）。
+3. 第一次監聽區網時，Windows 可能跳出「Windows 安全性警訊」：請只允許 **私人網路**，**不要**勾選公用網路。本程式不會自動改防火牆。
+4. iPhone 連上**同一 Wi-Fi**，用 Safari 開該 `http://…` 網址（不必 HTTPS；拍照使用檔案選擇／相機，不需安全內容）。
+5. 用完請在電腦把開關關掉（並視需要重開 start.bat），避免區網持續暴露此服務。設定與 `.env` 仍只能在 127.0.0.1 修改。不要把這個服務放到公網。
+
 
 ---
 
@@ -61,7 +73,7 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 
 可選：`setup-and-start.ps1` 同樣只呼叫上述 Node 腳本，**不** Bypass。ZIP 的 Mark of the Web 請用「解除鎖定」，或直接用 `start.bat`。
 
-## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09l）
+## 「無法連線上游／fetch failed」怎麼辦（v2026-11-09m）
 
 錯誤會展開底層原因。常見：
 - **ECONNREFUSED**：該 IP／埠沒有服務（`https://127.0.0.1`＝443 埠；Central 若在別的埠請寫 `:埠號`）
@@ -69,16 +81,16 @@ GitHub Pages **無法**打你筆電上的 Central／127.0.0.1。
 - **EPROTO**：http／https 弄反
 詳見畫面訊息與 `runtime/upstream.log`。
 
-## 「聲明版本不符」怎麼辦（v2026-11-09l）
+## 「聲明版本不符」怎麼辦（v2026-11-09m）
 
 原因多半是：舊 `.env` 裡有 `FACEME_STATEMENT_VERSION=…`（建立 .env 時從舊 example 帶入），而網頁已更新。  
 現在程式以 `statement-version.json` 為準，**會忽略 .env 裡不同的覆寫值**（不自動改你的 .env）。建議刪除或註解該行後重開 `start.bat`，並重新整理瀏覽器。
 
-## TLS 與 IP 位址（v2026-11-09l）
+## TLS 與 IP 位址（v2026-11-09m）
 
 連線 `https://127.0.0.1`（或其它 IP）時**不會**再設定非法的 TLS `servername`（Node 禁止 SNI 為 IP）。憑證驗證預設仍開啟；若出現「憑證不被信任／名稱不符」，請改用憑證 SAN 上的主機名、匯入 CA，或僅在明白風險時設 `FACEME_SKIP_TLS_VERIFY=1`（不會自動略過）。
 
-## 略過自簽憑證（v2026-11-09l）
+## 略過自簽憑證（v2026-11-09m）
 
 本機版連線設定區有開關「**略過自簽憑證檢查（僅限本機 Central）**」。
 
@@ -120,7 +132,7 @@ npm test
 - 薄後端僅內網／本機試驗，勿對網際網路公開。
 - 規格見 `server/fixtures/`；**未**宣稱已對真實 Central 驗證通過。
 
-## QC 失敗原因（v2026-11-09l）
+## QC 失敗原因（v2026-11-09m）
 
 真實註冊若人臉品質檢查未通過，畫面會列出**白話原因與調整建議**（例如偵測到多張臉、光線太暗、臉偏轉），並可展開已遮罩的「技術細節」。
 
@@ -129,7 +141,7 @@ npm test
 - 欄位名稱依文件與常見別名**寬鬆比對**；Central 實際 swagger 欄位若不同，可對照 log 再改進解析。
 
 
-## QC 真實格式（v2026-11-09l）
+## QC 真實格式（v2026-11-09m）
 
 Central 實際回應（2026-11-09 觀察）：
 
@@ -141,7 +153,7 @@ Central 實際回應（2026-11-09 觀察）：
 - `condition` 各項：`true`＝該項通過、`false`＝不合格（才顯示原因）
 - 缺欄或非布林 → fail-closed「無法判讀」
 
-## 群組與匯入（v2026-11-09l）
+## 群組與匯入（v2026-11-09m）
 
 - 註冊頁**群組必填**：下拉載入 `GET /api/groups`（薄後端代打 `POST /api/website/group/list`，分頁；權杖不外露）。可用「測試讀取群組」。
 - 新群組：前端選顏色／圖示編號 → 薄後端 `POST /api/website/group/create`（`name`+`color`+`patternId`，不送 type）→ 取得 id（回應或再 list）→ 匯入。

@@ -7,12 +7,15 @@ const { config } = require('./config');
 const { corsMiddleware } = require('./middleware/cors');
 const { errorHandler } = require('./middleware/errors');
 const apiRouter = require('./routes/api');
+const { accessGateMiddleware, listenHost, phoneUrls, FIREWALL_NOTE } = require('./lan-access');
+const { setHttpServer } = require('./http-bind');
 
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', false);
 
+  app.use(accessGateMiddleware);
   app.use(corsMiddleware);
 
   app.use(
@@ -81,17 +84,34 @@ function start() {
     });
   }
   const app = createApp();
-  const server = app.listen(config.port, config.host, () => {
+  const bind = listenHost();
+  const server = app.listen(config.port, bind, () => {
+    setHttpServer(server);
     console.log(
-      `FaceMe thin backend ${config.appVersion} listening http://${config.host}:${config.port}`
+      `FaceMe thin backend ${config.appVersion} listening http://${bind}:${config.port}`
     );
     console.log(
-      `statement=${config.statementVersion} realModeEnabled=${config.realModeEnabled}`
+      `statement=${config.statementVersion} realModeEnabled=${config.realModeEnabled} lanAccess=${config.lanAccess}`
     );
+    if (config.lanAccess) {
+      const urls = phoneUrls(config.port);
+      console.log('LAN access ON. Phone URL(s) (same Wi-Fi):');
+      if (urls.length) {
+        urls.forEach(function (u) {
+          console.log('  ' + u);
+        });
+      } else {
+        console.log('  (no RFC1918 IPv4 found — check Wi-Fi adapter)');
+      }
+      console.log(FIREWALL_NOTE);
+    } else {
+      console.log('LAN access OFF. Only http://127.0.0.1:' + config.port + '/ is reachable.');
+    }
     console.log(
       'Intranet trial only — restrict by ACL; do not publish to the Internet.'
     );
   });
+  setHttpServer(server);
   return server;
 }
 

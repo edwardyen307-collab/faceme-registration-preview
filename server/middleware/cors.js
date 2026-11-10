@@ -1,6 +1,7 @@
 'use strict';
 
 const { config } = require('../config');
+const { classifyHost, originIsSameHost, classifyIp, parseHostHeader } = require('../lan-access');
 
 function isLoopbackOrigin(origin) {
   if (!origin) return false;
@@ -18,8 +19,15 @@ function corsMiddleware(req, res, next) {
   if (!origin) {
     return next();
   }
-  const allowed =
-    config.corsOrigins.includes(origin) || isLoopbackOrigin(origin);
+  let allowed = isLoopbackOrigin(origin);
+  if (!allowed && config.lanAccess && originIsSameHost(origin, req.headers.host, config.port) === true) {
+    const h = parseHostHeader(req.headers.host);
+    allowed = classifyHost(req.headers.host) === 'private' && classifyIp(h.hostname) === 'private';
+  }
+  // CORS_ORIGINS (e.g. GitHub Pages) only when talking to loopback Host — never to LAN Host
+  if (!allowed && classifyHost(req.headers.host) === 'loopback' && config.corsOrigins.includes(origin)) {
+    allowed = true;
+  }
   if (allowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
