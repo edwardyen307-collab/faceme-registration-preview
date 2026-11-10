@@ -1,4 +1,4 @@
-FaceMe update pack v2026-11-09n
+FaceMe update pack v2026-11-09o
 ===============================
 DO NOT overwrite: .env
 
@@ -10,6 +10,8 @@ REQUIRED:
 - register.html
 - styles.css
 - statement-version.json
+- vendor/qrcode-generator/qrcode.js
+- THIRD_PARTY.md
 - server/**
 - package.json
 - package-lock.json
@@ -17,5 +19,8 @@ REQUIRED:
 OPTIONAL: setup-and-start.ps1, README.md, .env.example, tests/**, docs/**
 
 After replace: close old node, start.bat, hard-refresh.
-New (09n): 找人／補群組 (loopback-only). List member/list without groupId,
-person/query + range scan, person/update assign with real-mode gates + confirm.
+New (09o): Registration flow is first. All admin/settings sit at the bottom
+in one collapsed "管理／設定（僅本機）" block and are omitted entirely on
+LAN/phone HTML (loopback-only APIs still enforced). Group <select> auto-loads
+GET /api/groups on PC and iPhone. Offline QR for phone URLs when LAN is on
+(vendored MIT qrcode-generator; no external QR service).

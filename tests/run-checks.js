@@ -63,12 +63,12 @@ var ps1 = read('setup-and-start.ps1');
 
   ok('start.bat no choice.exe dependency', !/\bchoice\b/i.test(text));
   ok('start.bat calls node launcher', /windows-launcher\.js/.test(text));
-  ok('start.bat version banner 09n', /v2026-11-09n/.test(text));
+  ok('start.bat version banner 09o', /v2026-11-09o/.test(text));
   ok('launcher has cleanupChild + launcher.log', /cleanupChild/.test(launcher) && /launcher\.log/.test(launcher));
 })();
 
 
-ok('version v2026-11-09n in pages', /v2026-11-09n/.test(indexHtml) && /v2026-11-09n/.test(registerHtml));
+ok('version v2026-11-09o in pages', /v2026-11-09o/.test(indexHtml) && /v2026-11-09o/.test(registerHtml));
 ok('statement version loaded from shared json', /privacy-notice-draft-1/.test(js) && /data-statement-version/.test(indexHtml) && /privacy-notice-draft-1/.test(fs.readFileSync(path.join(root,'statement-version.json'),'utf8')));
 ok('env example FACEME_BASE_URL is 127.0.0.1', /^FACEME_BASE_URL=https:\/\/127\.0\.0\.1$/m.test(envExample));
 ok('env example real mode off', /^FACEME_REAL_MODE=0$/m.test(envExample));
@@ -94,13 +94,20 @@ ok('structured failure handles import', /IMPORT_PERSON_ID_MISSING/.test(js));
 
 ok('qc-explain module exists', fs.existsSync(path.join(root, 'server/central/qc-explain.js')));
 
-ok('group field in register page', /group-name/.test(registerHtml) && /group-list/.test(registerHtml));
+ok('group field in register page', /group-name/.test(registerHtml) && /group-select/.test(registerHtml));
 ok('group probe + create extras in register', /btn-probe-groups/.test(registerHtml) && /group-create-extras/.test(registerHtml) && /group-color/.test(registerHtml));
 ok('app sends groupColor for new groups', /groupColor/.test(js) && /groupPatternId/.test(js) && /groups\/probe/.test(js));
 ok('groups module documents body encoding env', /FACEME_GROUP_BODY_ENCODING/.test(fs.readFileSync(path.join(root, '.env.example'), 'utf8')) || /FACEME_GROUP_BODY_ENCODING/.test(fs.readFileSync(path.join(root, 'server/central/groups.js'), 'utf8')));
 ok('settings collapsible details', /settings-details/.test(indexHtml) && /settings-details/.test(registerHtml));
+ok('admin section at bottom labelled 管理／設定', /id="admin-details"/.test(indexHtml) && /管理／設定（僅本機）/.test(indexHtml) && /管理／設定（僅本機）/.test(registerHtml));
+ok('registration flow before admin in index', indexHtml.indexOf('notice-heading') < indexHtml.indexOf('local-admin-root'));
+ok('registration form before admin in register', registerHtml.indexOf('register-form') < registerHtml.indexOf('local-admin-root') && registerHtml.indexOf('group-select') < registerHtml.indexOf('local-admin-root'));
+ok('probe button is in admin not form', registerHtml.indexOf('btn-probe-groups') > registerHtml.indexOf('local-admin-root'));
+ok('phone QR card present for local markup', /id="phone-qr-card"/.test(indexHtml) && /id="phone-qr-card"/.test(registerHtml) && /qrcode-generator\/qrcode\.js/.test(registerHtml));
+ok('vendored MIT QR lib present', fs.existsSync(path.join(root, 'vendor/qrcode-generator/qrcode.js')) && /MIT/.test(fs.readFileSync(path.join(root, 'THIRD_PARTY.md'), 'utf8')));
+ok('no external QR web service', !/api\.qrserver|qrcode\.tec-it|chart\.googleapis|quickchart/i.test(js + indexHtml + registerHtml));
 ok('groups module exists', fs.existsSync(path.join(root, 'server/central/groups.js')));
-ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js));
+ok('app loads groups API', /\/api\/groups/.test(js) && /SETTINGS_OPEN_KEY/.test(js) && /fillGroupOptions/.test(js) && /group-select/.test(js));
 
 ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
 
@@ -116,6 +123,12 @@ ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
   ok('classify public host', lan.classifyHost('8.8.8.8:8443') === 'public');
   ok('health is LAN-allowed path', lan.isLanAllowedPath('/api/health') && lan.isLanAllowedPath('/api/register') && lan.isLanAllowedPath('/api/groups') && lan.isLanAllowedPath('/api/consent'));
   ok('settings not LAN-allowed', lan.isSettingsPath('/api/local-settings') && lan.isSettingsPath('/api/local-settings/lan-access') && lan.isSettingsPath('/api/connection-test') && !lan.isLanAllowedPath('/api/local-settings'));
+  ok('groups list is LAN-allowed, probe is not', lan.isLanAllowedPath('/api/groups') && !lan.isLanAllowedPath('/api/groups/probe'));
+  var stripped = lan.stripLocalOnlyHtml(indexHtml + registerHtml);
+  ok('stripLocalOnlyHtml removes admin and QR card', !/local-admin-root/.test(stripped) && !/phone-qr-card/.test(stripped) && !/管理／設定（僅本機）/.test(stripped) && !/找人／補群組/.test(stripped) && !/lan-access-toggle/.test(stripped));
+  ok('stripLocalOnlyHtml keeps registration flow', /notice-heading/.test(stripped) && /register-form/.test(stripped) && /group-select/.test(stripped));
+  ok('loopback page request helper', lan.isLoopbackPageRequest({ headers: { host: '127.0.0.1:8443' }, socket: { remoteAddress: '127.0.0.1' } }) === true);
+  ok('LAN Host is not loopback page', lan.isLoopbackPageRequest({ headers: { host: '192.168.1.8:8443' }, socket: { remoteAddress: '127.0.0.1' } }) === false);
   var { config: cfgLan } = require(path.join(root, 'server/config'));
   var prevLan = cfgLan.lanAccess;
   cfgLan.lanAccess = false;
@@ -160,6 +173,24 @@ ok('app.js skip-tls API', /local-settings\/skip-tls-verify/.test(js));
 })();
 
 ok('person-admin panel in pages', /person-admin-card/.test(indexHtml) && /person-admin-card/.test(registerHtml) && /找人／補群組/.test(indexHtml));
+
+(function qrLibUnitTest() {
+  var qrcode = require(path.join(root, 'vendor/qrcode-generator/qrcode.js'));
+  var qr = qrcode(0, 'M');
+  qr.addData('http://192.168.1.8:8443/');
+  qr.make();
+  var n = qr.getModuleCount();
+  ok('QR matrix size >= 21', n >= 21);
+  var dark = 0;
+  for (var r = 0; r < n; r++) {
+    for (var c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) dark++;
+    }
+  }
+  ok('QR matrix mixed modules', dark > 20 && dark < n * n - 20);
+  ok('QR finder pattern top-left', qr.isDark(0, 0) && qr.isDark(0, 6) && qr.isDark(6, 0) && qr.isDark(3, 3));
+})();
+
 ok('app person-admin API paths', /person-admin\/member-list/.test(js) && /person-admin\/assign/.test(js) && /confirm\(/.test(js));
 
 (function personAdminUnitTests() {
@@ -757,7 +788,7 @@ async function httpIntegration() {
     if (k.indexOf(path.join(root, 'server')) !== -1) delete require.cache[k];
   });
   var { createApp, config } = require(path.join(root, 'server/index'));
-  ok('appVersion 09n', config.appVersion === 'v2026-11-09n');
+  ok('appVersion 09o', config.appVersion === 'v2026-11-09o');
   ok('realMode stays disabled by default in this test env', config.realModeEnabled === false);
 
   var app = createApp();
@@ -807,7 +838,7 @@ async function httpIntegration() {
   }
 
   var health = await req('GET', '/api/health');
-  ok('health version 09n', health.status === 200 && health.json.appVersion === 'v2026-11-09n');
+  ok('health version 09o', health.status === 200 && health.json.appVersion === 'v2026-11-09o');
   ok('health statementVersion canonical', health.json.statementVersion === 'privacy-notice-draft-1');
   ok('health reports ignored stale env', health.json.statementEnvIgnored === true);
   ok('health not claiming central ok', !/Central 連線成功/.test(JSON.stringify(health.json)));
@@ -1460,6 +1491,19 @@ async function httpIntegration() {
 
   var lanPa = await reqHost('POST', '/api/person-admin/query', '192.168.32.10:' + port, { 'Content-Type': 'application/json', Origin: 'http://192.168.32.10:' + port }, { personId: '20' });
   ok('LAN rejects person-admin even when LAN on', lanPa.status === 403 && lanPa.json && (lanPa.json.code === 'NOT_LOOPBACK' || lanPa.json.code === 'BAD_HOST' || lanPa.json.code === 'LAN_PATH_DENIED'));
+
+  var lanGroups = await reqHost('GET', '/api/groups', '192.168.32.10:' + port, { Origin: 'http://192.168.32.10:' + port });
+  ok('LAN can GET /api/groups', lanGroups.status !== 403 && !(lanGroups.json && (lanGroups.json.code === 'LAN_PATH_DENIED' || lanGroups.json.code === 'NOT_LOOPBACK' || lanGroups.json.code === 'LAN_DISABLED' || lanGroups.json.code === 'BAD_HOST' || lanGroups.json.code === 'PUBLIC_IP_DENIED')) && !/fake-token/.test(lanGroups.text));
+  var lanProbe = await reqHost('POST', '/api/groups/probe', '192.168.32.10:' + port, { 'Content-Type': 'application/json', Origin: 'http://192.168.32.10:' + port }, {});
+  ok('LAN rejects /api/groups/probe', lanProbe.status === 403 && lanProbe.json && (lanProbe.json.code === 'LAN_PATH_DENIED' || lanProbe.json.code === 'NOT_LOOPBACK'));
+
+  var lanRegHtml = await reqHost('GET', '/register.html', '192.168.32.10:' + port);
+  ok('LAN register.html omits admin markup', lanRegHtml.status === 200 && /register-form/.test(lanRegHtml.text) && /group-select/.test(lanRegHtml.text) && !/local-admin-root/.test(lanRegHtml.text) && !/管理／設定（僅本機）/.test(lanRegHtml.text) && !/lan-access-toggle/.test(lanRegHtml.text) && !/找人／補群組/.test(lanRegHtml.text) && !/btn-probe-groups/.test(lanRegHtml.text) && !/phone-qr-card/.test(lanRegHtml.text));
+  var lanIdxHtml = await reqHost('GET', '/', '192.168.32.10:' + port);
+  ok('LAN index.html omits admin markup', lanIdxHtml.status === 200 && /notice-heading/.test(lanIdxHtml.text) && !/local-admin-root/.test(lanIdxHtml.text) && !/管理／設定（僅本機）/.test(lanIdxHtml.text) && !/找人／補群組/.test(lanIdxHtml.text));
+  var loopRegHtml = await req('GET', '/register.html');
+  ok('loopback register.html keeps admin markup', loopRegHtml.status === 200 && /local-admin-root/.test(loopRegHtml.text) && /管理／設定（僅本機）/.test(loopRegHtml.text) && /group-select/.test(loopRegHtml.text));
+
   cfgLanHttp.config.lanAccess = prevLanHttp;
 
   var centralPa = require(path.join(root, 'server/central/client'));
@@ -1565,7 +1609,7 @@ async function httpIntegration() {
   centralPa.listGroups = prevListG;
 
 
-  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09n');
+  ok('launcher APP_VERSION matches', launch.APP_VERSION === 'v2026-11-09o');
   var probeDown = await launch.probeOurServer('127.0.0.1', 1);
   ok('probe down on closed port', probeDown.state === 'down');
   var probeOurs = await launch.probeOurServer('127.0.0.1', port);

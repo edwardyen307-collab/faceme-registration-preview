@@ -1,13 +1,14 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { config } = require('./config');
 const { corsMiddleware } = require('./middleware/cors');
 const { errorHandler } = require('./middleware/errors');
 const apiRouter = require('./routes/api');
-const { accessGateMiddleware, listenHost, phoneUrls, FIREWALL_NOTE } = require('./lan-access');
+const { accessGateMiddleware, listenHost, phoneUrls, FIREWALL_NOTE, isLoopbackPageRequest, stripLocalOnlyHtml } = require('./lan-access');
 const { setHttpServer } = require('./http-bind');
 
 function createApp() {
@@ -30,10 +31,39 @@ function createApp() {
 
   app.use('/api', apiRouter);
 
+  const HTML_PAGES = {
+    '/': 'index.html',
+    '/index.html': 'index.html',
+    '/index': 'index.html',
+    '/register.html': 'register.html',
+    '/register': 'register.html'
+  };
+
+  function sendFilteredHtml(req, res, fileName) {
+    const filePath = path.join(config.publicRoot, fileName);
+    fs.readFile(filePath, 'utf8', function (err, html) {
+      if (err) {
+        res.status(err.code === 'ENOENT' ? 404 : 500).type('text').send('頁面讀取失敗');
+        return;
+      }
+      if (!isLoopbackPageRequest(req)) {
+        html = stripLocalOnlyHtml(html);
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(html);
+    });
+  }
+
+  app.get(Object.keys(HTML_PAGES), function (req, res) {
+    const name = HTML_PAGES[req.path] || HTML_PAGES[(req.path || '').replace(/\/$/, '') || '/'];
+    sendFilteredHtml(req, res, name || 'index.html');
+  });
+
   // Static frontend (same origin recommended for intranet HTTPS)
   app.use(
     express.static(config.publicRoot, {
-      index: 'index.html',
+      index: false,
       extensions: ['html'],
       setHeaders(res, filePath) {
         if (filePath.endsWith('.html')) {

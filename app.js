@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 'v2026-11-09n';
+  var APP_VERSION = 'v2026-11-09o';
   var STATEMENT_VERSION = null; // loaded from /api/health or /statement-version.json
   var CONSENT_KEY = 'faceme_privacy_consent_v1';
   var TICKET_KEY = 'faceme_consent_ticket';
@@ -308,6 +308,106 @@
     }
   }
 
+  function stripLocalOnlyNodesIfVisitor() {
+    if (isLocalLoopbackPage() && !isPagesHost()) return;
+    var nodes = document.querySelectorAll('[data-local-only], #local-admin-root, #phone-qr-card');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i] && nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+    }
+  }
+
+  function escapeQrText(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function buildPhoneQrFigures(urls) {
+    var html = '';
+    for (var i = 0; i < (urls || []).length; i++) {
+      var u = String(urls[i] || '');
+      if (!u) continue;
+      var svg = '';
+      try {
+        if (typeof qrcode === 'function') {
+          var qr = qrcode(0, 'M');
+          qr.addData(u);
+          qr.make();
+          if (typeof qr.createSvgTag === 'function') {
+            svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+          } else if (typeof qr.createImgTag === 'function') {
+            svg = qr.createImgTag(4, 4);
+          }
+        }
+      } catch (e) {
+        svg = '';
+      }
+      html +=
+        '<figure class="phone-qr-item">' +
+        (svg ? '<div class="phone-qr-svg">' + svg + '</div>' : '<p class="hint">無法在本機產生 QR</p>') +
+        '<figcaption><code>' +
+        escapeQrText(u) +
+        '</code></figcaption></figure>';
+    }
+    return html;
+  }
+
+  function renderPhoneQr(data) {
+    var card = document.getElementById('phone-qr-card');
+    var hint = document.getElementById('phone-qr-hint');
+    var topCodes = document.getElementById('phone-qr-codes');
+    var adminCodes = document.getElementById('admin-phone-qr-codes');
+    if (!isLocalLoopbackPage() || isPagesHost()) {
+      if (card && card.parentNode) card.parentNode.removeChild(card);
+      return;
+    }
+    if (card) card.hidden = false;
+    var lanOn = !!(data && data.lanAccess);
+    var urls = (data && data.phoneUrls) || [];
+    if (lanOn && urls.length) {
+      if (hint) {
+        hint.textContent = '用 iPhone 相機掃描即可開啟註冊頁（同一 Wi-Fi，HTTP）。';
+      }
+      var figures = buildPhoneQrFigures(urls);
+      if (topCodes) {
+        topCodes.hidden = false;
+        topCodes.innerHTML = figures;
+      }
+      if (adminCodes) {
+        adminCodes.hidden = false;
+        adminCodes.innerHTML = figures;
+      }
+    } else if (lanOn) {
+      if (hint) {
+        hint.textContent =
+          '已開啟區網，但目前找不到區網 IPv4。請確認電腦已連上 Wi-Fi 後重開 start.bat。QR 會在偵測到區網位址後顯示。';
+      }
+      if (topCodes) {
+        topCodes.hidden = true;
+        topCodes.innerHTML = '';
+      }
+      if (adminCodes) {
+        adminCodes.hidden = true;
+        adminCodes.innerHTML = '';
+      }
+    } else {
+      if (hint) {
+        hint.textContent =
+          '開啟下方「管理／設定（僅本機）」的「手機連線（區網）」後，這裡會顯示可供 iPhone 相機掃描的 QR。';
+      }
+      if (topCodes) {
+        topCodes.hidden = true;
+        topCodes.innerHTML = '';
+      }
+      if (adminCodes) {
+        adminCodes.hidden = true;
+        adminCodes.innerHTML = '';
+      }
+    }
+  }
+
   function applyLocalOneClickDefaults() {
     var params;
     try {
@@ -489,6 +589,7 @@
           lanUrls.innerHTML = '';
         }
       }
+      renderPhoneQr(data);
     }
 
     if (!isLocalLoopbackPage() || isPagesHost()) {
@@ -499,6 +600,8 @@
       }
       return;
     }
+
+    renderPhoneQr({ lanAccess: false, phoneUrls: [] });
 
     function fetchSettings() {
       if (typeof fetch !== 'function') {
@@ -676,7 +779,7 @@
 
 
   function initSettingsCollapse() {
-    var details = document.getElementById('settings-details');
+    var details = document.getElementById('admin-details') || document.getElementById('settings-details');
     if (!details) return;
     try {
       var saved = lsGet(SETTINGS_OPEN_KEY);
@@ -695,6 +798,7 @@
 
   function initApiBasePanel() {
     initSettingsCollapse();
+    applyLocalOneClickDefaults();
     var input = document.getElementById('api-base-input');
     var saveBtn = document.getElementById('api-base-save');
     var clearBtn = document.getElementById('api-base-clear');
@@ -703,11 +807,10 @@
     var status = document.getElementById('api-base-status');
     var connBtn = document.getElementById('btn-conn-test');
     var connLoginBtn = document.getElementById('btn-conn-login');
+    updateModeBanner(banner);
     if (!input) return;
 
-    applyLocalOneClickDefaults();
     input.value = getApiBase();
-    updateModeBanner(banner);
 
     function flash(msg, isError) {
       if (!status) return;
@@ -896,6 +999,7 @@
     var backBtn = document.getElementById('back-to-notice');
     var submitBtn = document.getElementById('register-submit');
     var groupInput = document.getElementById('group-name');
+    var groupSelect = document.getElementById('group-select');
     var groupList = document.getElementById('group-list');
     var groupError = document.getElementById('group-error');
     var groupStatus = document.getElementById('group-status');
@@ -981,8 +1085,58 @@
       return type ? name + '（' + type + '）' : name;
     }
 
+    function fillGroupOptions() {
+      if (!groupSelect) return;
+      var prev = groupSelect.value;
+      groupSelect.innerHTML = '';
+      var ph = document.createElement('option');
+      ph.value = '';
+      if (knownGroups.length) ph.textContent = '請選擇群組…';
+      else if (isRealMode()) ph.textContent = '尚無群組，請在下方輸入新名稱';
+      else ph.textContent = '預覽模式請在下方輸入群組名稱';
+      groupSelect.appendChild(ph);
+      for (var i = 0; i < knownGroups.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = knownGroups[i].name || knownGroups[i].id || '';
+        opt.textContent = groupLabel(knownGroups[i]);
+        groupSelect.appendChild(opt);
+      }
+      if (prev) groupSelect.value = prev;
+      if (groupList) {
+        groupList.innerHTML = '';
+        for (var j = 0; j < knownGroups.length; j++) {
+          var dopt = document.createElement('option');
+          dopt.value = knownGroups[j].name || knownGroups[j].id || '';
+          dopt.label = groupLabel(knownGroups[j]);
+          groupList.appendChild(dopt);
+        }
+      }
+    }
+
+    function syncGroupFromSelect() {
+      if (!groupSelect || !groupInput) return;
+      if (groupSelect.value) groupInput.value = groupSelect.value;
+      updateGroupCreateExtrasVisibility();
+    }
+
+    function syncSelectFromInput() {
+      if (!groupSelect || !groupInput) return;
+      var val = String(groupInput.value || '').trim();
+      var match = '';
+      for (var i = 0; i < knownGroups.length; i++) {
+        var n = String(knownGroups[i].name || knownGroups[i].id || '').trim();
+        if (n && n.toLowerCase() === val.toLowerCase()) {
+          match = knownGroups[i].name || knownGroups[i].id || '';
+          break;
+        }
+      }
+      groupSelect.value = match;
+      updateGroupCreateExtrasVisibility();
+    }
+
     function loadGroups() {
       initGroupCreateExtras();
+      fillGroupOptions();
       if (!groupInput || !isRealMode()) {
         if (groupStatus) {
           groupStatus.textContent = isRealMode()
@@ -1020,15 +1174,7 @@
             return;
           }
           knownGroups = (pack.data && pack.data.groups) || [];
-          if (groupList) {
-            groupList.innerHTML = '';
-            for (var i = 0; i < knownGroups.length; i++) {
-              var opt = document.createElement('option');
-              opt.value = knownGroups[i].name || knownGroups[i].id || '';
-              opt.label = groupLabel(knownGroups[i]);
-              groupList.appendChild(opt);
-            }
-          }
+          fillGroupOptions();
           if (groupStatus) {
             groupStatus.className = 'api-status';
             groupStatus.textContent =
@@ -1049,9 +1195,12 @@
         });
     }
 
+    if (groupSelect) {
+      groupSelect.addEventListener('change', syncGroupFromSelect);
+    }
     if (groupInput) {
-      groupInput.addEventListener('input', updateGroupCreateExtrasVisibility);
-      groupInput.addEventListener('change', updateGroupCreateExtrasVisibility);
+      groupInput.addEventListener('input', syncSelectFromInput);
+      groupInput.addEventListener('change', syncSelectFromInput);
     }
 
     if (probeGroupsBtn) {
@@ -1094,15 +1243,7 @@
             }
             if (pack.res.ok && pack.data && Array.isArray(pack.data.groups)) {
               knownGroups = pack.data.groups;
-              if (groupList) {
-                groupList.innerHTML = '';
-                for (var i = 0; i < knownGroups.length; i++) {
-                  var opt = document.createElement('option');
-                  opt.value = knownGroups[i].name || knownGroups[i].id || '';
-                  opt.label = groupLabel(knownGroups[i]);
-                  groupList.appendChild(opt);
-                }
-              }
+              fillGroupOptions();
               if (groupStatus) {
                 groupStatus.className = 'api-status';
                 groupStatus.textContent =
@@ -1459,7 +1600,7 @@
     var card = document.getElementById('person-admin-card');
     if (!card) return;
     if (!isLocalLoopbackPage() || isPagesHost()) {
-      card.hidden = true;
+      if (card.parentNode) card.parentNode.removeChild(card);
       return;
     }
     card.hidden = false;
@@ -1609,7 +1750,7 @@
     function loadAssignGroups() {
       var sel = document.getElementById('pa-assign-group');
       var base = apiBase();
-      if (!sel || !base) return;
+      if (!sel || !base || typeof fetch !== 'function') return;
       fetch(base + '/api/groups', { method: 'GET', credentials: 'same-origin' })
         .then(function (res) {
           return res.json().then(function (data) {
@@ -1795,10 +1936,13 @@
     runConnectionTest: runConnectionTest,
     loadCentralSettingsUi: loadCentralSettingsUi,
     isPagesHost: isPagesHost,
-    initPersonAdminPanel: initPersonAdminPanel
+    initPersonAdminPanel: initPersonAdminPanel,
+    stripLocalOnlyNodesIfVisitor: stripLocalOnlyNodesIfVisitor,
+    renderPhoneQr: renderPhoneQr
   };
 
   document.addEventListener('DOMContentLoaded', function () {
+    stripLocalOnlyNodesIfVisitor();
     var page = document.body && document.body.getAttribute('data-page');
     if (page === 'consent') initConsentPage();
     if (page === 'register') initRegisterPage();

@@ -1,6 +1,6 @@
 # FaceMe 本機註冊預覽（Windows 同機）
 
-版本：**v2026-11-09n**
+版本：**v2026-11-09o**
 
 ## 若「雙擊 start.bat 視窗閃一下就關掉」
 
@@ -10,7 +10,7 @@
 
 **已確認的舊版問題（v2026-11-06c 的 `start.bat`）**：檔案為 Unix **LF** 換行（非 Windows CRLF）；且在 `if (...)` 括號區塊內放了 `:標籤`（如 `:FAIL_NODE`）與 UTF-8 中文／`choice`。Windows `cmd` 常因此在跑到 `pause` 前就解析失敗並直接關窗。本版改為 **純 ASCII + CRLF** 啟動器，錯誤路徑一律 `goto HOLD` 再 `pause`；中文詳訊改由 Node 顯示。
 
-**修復包**：見 release 工作區 `/workspace/faceme-fix-v2026-11-09n.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
+**修復包**：見 release 工作區 `/workspace/faceme-update-v2026-11-09o.zip`（或完整 repo ZIP）。至少覆蓋 `start.bat` + `scripts/windows-launcher.js`；**勿覆蓋 `.env`**。
 
 ## 三步開始（個人 Windows 筆電）
 
@@ -28,15 +28,16 @@
 > 一鍵**不等于**已串上真實 Central 註冊成功。預設 `FACEME_REAL_MODE=0`、法務確認＝0；首次真實寫入仍需聲明定稿並自行啟用旗標。Central API 形狀**尚未**在此環境對真機驗證。
 
 
-## 用 iPhone（同一 Wi-Fi）開啟註冊頁（v2026-11-09n）
+## 用 iPhone（同一 Wi-Fi）開啟註冊頁（v2026-11-09o）
 
 預設只聽 `127.0.0.1`，手機連不到。需在**電腦本機頁**手動開啟「手機連線（區網）」：
 
-1. 在電腦用 `http://127.0.0.1:8443/?local=1` 開啟，展開「連線設定」，勾選 **手機連線（區網）**。
-2. 若提示請重開 `start.bat`，先關掉舊視窗再雙擊一次。命令視窗會印出手機網址，例如 `http://192.168.x.x:8443/`（以畫面上列的為準）。
-3. 第一次監聽區網時，Windows 可能跳出「Windows 安全性警訊」：請只允許 **私人網路**，**不要**勾選公用網路。本程式不會自動改防火牆。
-4. iPhone 連上**同一 Wi-Fi**，用 Safari 開該 `http://…` 網址（不必 HTTPS；拍照使用檔案選擇／相機，不需安全內容）。
-5. 用完請在電腦把開關關掉（並視需要重開 start.bat），避免區網持續暴露此服務。設定與 `.env` 仍只能在 127.0.0.1 修改。不要把這個服務放到公網。
+1. 在電腦用 `http://127.0.0.1:8443/?local=1` 開啟。註冊／同意流程在頁面最上方；連線設定等管理功能已移到最下方收合的「管理／設定（僅本機）」。
+2. 展開「管理／設定（僅本機）」，勾選 **手機連線（區網）**。開啟後，頁面上方「手機掃碼註冊」與設定區都會出現 QR（本機離線產生，不經過外部 QR 網站）。
+3. 若提示請重開 `start.bat`，先關掉舊視窗再雙擊一次。也可用 iPhone 相機掃描 QR，或手動開啟畫面上的 `http://192.168.x.x:8443/`。
+4. 第一次監聽區網時，Windows 可能跳出「Windows 安全性警訊」：請只允許 **私人網路**，**不要**勾選公用網路。本程式不會自動改防火牆。
+5. iPhone 連上**同一 Wi-Fi**，用 Safari 開啟該 HTTP 網址（不必 HTTPS；拍照使用檔案選擇／相機，不需安全內容）。手機頁只顯示註冊流程，不會出現管理／設定。群組請用下拉選單選擇（進入頁面會自動載入），也可自行輸入新名稱。
+6. 用完請在電腦把開關關掉（並視需要重開 start.bat），避免區網持續暴露此服務。設定與 `.env` 仍只能在 127.0.0.1 修改。不要把這個服務放到公網。
 
 
 ---
@@ -155,18 +156,18 @@ Central 實際回應（2026-11-09 觀察）：
 
 ## 群組與匯入（v2026-11-09n）
 
-- 註冊頁**群組必填**：下拉載入 `GET /api/groups`（薄後端代打 `POST /api/website/group/list`，分頁；權杖不外露）。可用「測試讀取群組」。
+- 註冊頁**群組必填**：`<select>` 下拉（另有輸入新名稱）在頁面載入時自動打 `GET /api/groups`（薄後端代打 `POST /api/website/group/list`，分頁；權杖不外露）。本機與區網手機皆可讀取清單；不必按管理區的「測試讀取群組」。
 - 新群組：前端選顏色／圖示編號 → 薄後端 `POST /api/website/group/create`（`name`+`color`+`patternId`，不送 type）→ 取得 id（回應或再 list）→ 匯入。
 - 群組 list 實際格式 `{ totalSize, results:[{ groupId, name, type, … }] }`；list/create 預設 **form → multipart → json**（僅 HTTP 415 才換編碼；可用 `FACEME_GROUP_BODY_ENCODING` 覆寫）。signIn 為 `application/x-www-form-urlencoded`；QC／import 為 multipart。
 - 人員匯入只送官方 multipart **`groupId`（int64）**，外加 `name`／`snapshot`／可選 `employeeId`／可選 `information` JSON。**不送** tags、skipQC、forceImport、群組別名。已移除匯入後搬群組備援。
 - 先前「註冊成功但 Central 看不到人」極可能是群組欄位名稱不對或根本沒帶群組；現在改為官方 `groupId`。
 - HTTP 406 `Exists similar person` → 「此人已註冊過（相似人員 #id）」；detail 連結僅允許與 `FACEME_BASE_URL` 同主機。
-- 連線設定預設收合，狀態存在 localStorage。
+- 管理／設定（僅本機）整區移到頁面最下方，預設收合；區網／手機頁不會輸出此區塊。狀態存在 localStorage。
 
 
 ## 找人／補群組（v2026-11-09n）
 
-僅本機 `http://127.0.0.1:8443/`（區網模式不會開放這些 API）。展開「找人／補群組」：
+僅本機 `http://127.0.0.1:8443/`（區網模式不會開放這些 API）。在本機頁展開最下方「管理／設定（僅本機）」後使用「找人／補群組」：
 
 1. **列出未分群組的人**：試著不帶 groupId 呼叫 member/list。若中央只回已分組的人，請改用編號查詢或範圍掃描。
 2. **用編號查詢／範圍掃描**：只讀。詳細頁連結為 `https://<Central 主機>/user-detail?id=<編號>`。

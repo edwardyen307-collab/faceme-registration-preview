@@ -10,12 +10,13 @@ const { config } = require('./config');
 
 const SETTINGS_PATH_PREFIXES = ['/api/local-settings', '/api/person-admin'];
 const SETTINGS_PATHS = { '/api/connection-test': true };
+// Read-only group list is used by the registration form on LAN/phone.
+// /api/groups/probe stays loopback-only (admin diagnostic).
 const LAN_API_PATHS = {
   '/api/health': true,
   '/api/consent': true,
   '/api/register': true,
-  '/api/groups': true,
-  '/api/groups/probe': true
+  '/api/groups': true
 };
 
 function stripIpv6Brackets(h) {
@@ -316,6 +317,27 @@ function listenHost() {
 const FIREWALL_NOTE =
   '第一次對區網監聽時，Windows 可能跳出「Windows 安全性警訊」。請只允許「私人網路」，不要勾選「公用網路」。本程式不會自動修改防火牆。用完請關閉「手機連線（區網）」。';
 
+/**
+ * True only when both the TCP peer and the Host header are loopback.
+ * LAN Host (even from a loopback socket in tests) is not a local admin page.
+ */
+function isLoopbackPageRequest(req) {
+  const host = req && req.headers && req.headers.host;
+  const remote = remoteAddress(req || {});
+  return classifyHost(host) === 'loopback' && classifyIp(remote) === 'loopback';
+}
+
+/**
+ * Strip local-only markup (admin / PC QR card) from HTML served to LAN or Pages-like clients.
+ * Markers: <!-- faceme-local-only:NAME:start --> ... <!-- faceme-local-only:NAME:end -->
+ */
+function stripLocalOnlyHtml(html) {
+  return String(html || '').replace(
+    /<!--\s*faceme-local-only:[^:]+:start\s*-->[\s\S]*?<!--\s*faceme-local-only:[^:]+:end\s*-->/g,
+    ''
+  );
+}
+
 module.exports = {
   SETTINGS_PATHS,
   LAN_API_PATHS,
@@ -331,6 +353,8 @@ module.exports = {
   isLanAllowedPath,
   evaluateAccess,
   accessGateMiddleware,
+  isLoopbackPageRequest,
+  stripLocalOnlyHtml,
   listLanIpv4Addresses,
   phoneUrls,
   listenHost,

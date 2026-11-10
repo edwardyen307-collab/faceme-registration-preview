@@ -4,8 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>人臉註冊 · FaceMe 預覽 v2026-11-09n</title>
+  <title>人臉註冊 · FaceMe 預覽 v2026-11-09o</title>
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    (function () {
+      try {
+        var h = location.hostname || '';
+        var loop = h === '127.0.0.1' || h === 'localhost' || h === '[::1]' || h === '::1';
+        document.documentElement.setAttribute('data-client', loop ? 'local' : 'visitor');
+      } catch (e) {
+        document.documentElement.setAttribute('data-client', 'visitor');
+      }
+    })();
+  </script>
 </head>
 <body data-page="register">
   <header class="app-header">
@@ -14,126 +25,21 @@
         <h1>人臉註冊</h1>
         <p>預覽模式 · 資料不會寫入 FaceMe</p>
       </div>
-      <span class="version-badge" aria-label="版本">v2026-11-09n</span>
+      <span class="version-badge" aria-label="版本">v2026-11-09o</span>
     </div>
   </header>
 
   <main>
     <div id="mode-banner" class="mode-banner mode-mock" role="status"></div>
-    <section class="card settings-card" aria-labelledby="api-settings-heading">
-      <details id="settings-details" class="settings-details">
-        <summary id="api-settings-heading" class="settings-summary">連線設定 <span class="settings-summary-hint">（點此展開／收合）</span></summary>
-        <div class="settings-body">
-
-      <p class="hint">① 瀏覽器→薄後端；② 薄後端→Central。變更 API base 會清除同意狀態。</p>
-      <h3 class="settings-sub">① 瀏覽器 → 薄後端（API base）</h3>
-      <p class="hint">存在 localStorage。姓名／照片只當次送到薄後端，前端不持久保存。</p>
-      <label for="api-base-input">薄後端 API base</label>
-      <div class="api-row">
-        <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
-        <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
-        <button type="button" class="btn btn-secondary" id="api-base-clear">Mock 預覽</button>
-        <button type="button" class="btn btn-secondary" id="api-base-same-origin">使用本機薄後端</button>
-      </div>
-      <div class="api-row" style="margin-top:0.5rem">
-        <button type="button" class="btn btn-secondary" id="btn-conn-test">連線測試（不寫入 Central）</button>
-        <button type="button" class="btn btn-secondary" id="btn-conn-login">連線＋登入測試（明確觸發）</button>
-      </div>
-      <pre class="conn-result" id="conn-test-result" aria-live="polite" hidden></pre>
-      <div class="api-status" id="api-base-status" aria-live="polite"></div>
-
-      <h3 class="settings-sub">② 薄後端 → FaceMe Central（FACEME_BASE_URL）</h3>
-      <p class="hint" id="central-base-hint">
-        寫入伺服器 <code>.env</code> 的 Central 位址（僅 https://主機或IP[:埠]）。帳密仍只在 .env，網頁<strong>不會</strong>顯示或讀取密碼。
-      </p>
-      <div id="central-base-local-only" class="preview-note" hidden>此區塊僅本機版（127.0.0.1）可用；GitHub Pages 無法修改 Central。</div>
-      <label for="central-base-input">Central 位址</label>
-      <div class="api-row">
-        <input type="url" id="central-base-input" placeholder="https://127.0.0.1 或 https://主機:埠" autocomplete="off" spellcheck="false" disabled />
-        <button type="button" class="btn btn-secondary" id="central-base-save" disabled>儲存 Central 位址</button>
-        <button type="button" class="btn btn-secondary" id="central-base-reload" disabled>重新載入</button>
-      </div>
-
-      <div class="api-status" id="central-base-status" aria-live="polite"></div>
-      <div class="skip-tls-row" id="skip-tls-row" hidden>
-        <label class="checkbox-row" for="skip-tls-toggle">
-          <input type="checkbox" id="skip-tls-toggle" disabled />
-          <span>略過自簽憑證檢查（僅限本機 Central）</span>
-        </label>
-        <p class="hint" id="skip-tls-hint">
-          僅當 Central 是 127.0.0.1／localhost／::1 時可開啟。有中間人風險；正式環境請匯入 CA。寫入 .env 的 FACEME_SKIP_TLS_VERIFY，立即生效。
-        </p>
-        <div class="api-status" id="skip-tls-status" aria-live="polite"></div>
-      </div>
-      <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
-
-      <div class="lan-access-row" id="lan-access-row" hidden>
-        <h3 class="settings-sub">③ 手機連線（區網，預設關閉）</h3>
-        <label class="checkbox-row" for="lan-access-toggle">
-          <input type="checkbox" id="lan-access-toggle" disabled />
-          <span>允許同一 Wi-Fi 的手機開啟此註冊頁</span>
-        </label>
-        <p class="hint" id="lan-access-hint">
-          僅能從本機（127.0.0.1）開關。開啟後伺服器改聽區網，手機用 <code>http://電腦區網IP:埠/</code> 開啟（Safari 用 HTTP 即可，拍照不需 HTTPS）。設定與 .env 仍只准本機修改。第一次開啟時 Windows 可能跳出「Windows 安全性警訊」，請只允許「私人網路」，不要勾選「公用網路」。用完請關閉。
-        </p>
-        <div id="lan-phone-urls" class="lan-phone-urls" hidden></div>
-        <div class="api-status" id="lan-access-status" aria-live="polite"></div>
-      </div>
-
-
-    
-        </div>
-      </details>
+    <!-- faceme-local-only:phone-qr:start -->
+    <section class="card phone-qr-card" id="phone-qr-card" data-local-only="1" hidden>
+      <h2 class="phone-qr-title">手機掃碼註冊</h2>
+      <p class="hint" id="phone-qr-hint">開啟下方「管理／設定（僅本機）」的「手機連線（區網）」後，這裡會顯示可供 iPhone 相機掃描的 QR。</p>
+      <div id="phone-qr-codes" class="phone-qr-codes" hidden></div>
     </section>
+    <!-- faceme-local-only:phone-qr:end -->
 
-    <section class="card person-admin-card" id="person-admin-card" hidden>
-      <details id="person-admin-details" class="settings-details">
-        <summary class="settings-summary">找人／補群組 <span class="settings-summary-hint">（僅本機 127.0.0.1，點此展開）</span></summary>
-        <div class="settings-body">
-          <p class="hint">用來找出可能被移出群組後「失踪」的人，再補回群組。讀取不必開真實寫入；指定群組會寫入 Central，需雙旗標與確認。</p>
-
-          <h3 class="settings-sub">列出未分群組的人</h3>
-          <p class="hint">呼叫 member/list 且不帶 groupId（Central 是否會回未分組的人，尚未實測）。</p>
-          <button type="button" class="btn btn-secondary" id="pa-list-btn">列出未分群組的人</button>
-          <div class="api-status" id="pa-list-status" aria-live="polite"></div>
-          <div id="pa-list-result" class="pa-result" hidden></div>
-          <pre class="conn-result" id="pa-list-raw" hidden></pre>
-
-          <h3 class="settings-sub">用編號查詢</h3>
-          <div class="api-row">
-            <label class="sr-only" for="pa-query-id">人員編號</label>
-            <input type="text" id="pa-query-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
-            <button type="button" class="btn btn-secondary" id="pa-query-btn">查詢</button>
-          </div>
-          <div class="api-status" id="pa-query-status" aria-live="polite"></div>
-          <div id="pa-query-result" class="pa-result" hidden></div>
-
-          <h3 class="settings-sub">範圍掃描（只讀）</h3>
-          <p class="hint">依序查詢編號 A 到 B（一次最多 200 個，略過不存在的編號），列出未分組／狀態不明的人。</p>
-          <div class="api-row">
-            <input type="text" id="pa-scan-from" inputmode="numeric" placeholder="從" autocomplete="off" />
-            <input type="text" id="pa-scan-to" inputmode="numeric" placeholder="到" autocomplete="off" />
-            <button type="button" class="btn btn-secondary" id="pa-scan-btn">範圍掃描</button>
-          </div>
-          <div class="api-status" id="pa-scan-status" aria-live="polite"></div>
-          <div id="pa-scan-result" class="pa-result" hidden></div>
-
-          <h3 class="settings-sub">指定群組（寫入 Central）</h3>
-          <p class="hint">對查到的人呼叫 person/update，只送 personId 與 groupId。需 FACEME_REAL_MODE 與法務確認皆為 1。</p>
-          <div class="api-row">
-            <input type="text" id="pa-assign-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
-            <select id="pa-assign-group">
-              <option value="">選擇群組…</option>
-            </select>
-            <button type="button" class="btn btn-secondary" id="pa-assign-reload-groups">重新載入群組</button>
-            <button type="button" class="btn btn-primary" id="pa-assign-btn">指定群組</button>
-          </div>
-          <div class="api-status" id="pa-assign-status" aria-live="polite"></div>
-          <div id="pa-assign-result" class="pa-result" hidden></div>
-        </div>
-      </details>
-    </section>
-    <section class="card" aria-labelledby="register-heading">
+<section class="card" aria-labelledby="register-heading">
       <h2 id="register-heading" class="sr-only">註冊表單</h2>
 
       <div class="preview-note" role="note">
@@ -177,27 +83,29 @@
         </div>
 
         <div class="field">
-          <label for="group-name">
+          <label for="group-select">
             群組 <span class="required" aria-hidden="true">*</span>
             <span class="sr-only">（必填）</span>
           </label>
+          <select
+            id="group-select"
+            name="groupSelect"
+            aria-describedby="group-hint group-error"
+          >
+            <option value="">請選擇群組…</option>
+          </select>
+          <label class="hint" for="group-name">或輸入新群組名稱</label>
           <input
             type="text"
             id="group-name"
             name="groupName"
-            list="group-list"
             required
             maxlength="64"
-            placeholder="選擇或輸入群組名稱"
+            placeholder="選擇上方清單，或在此輸入新名稱"
             autocomplete="off"
             aria-describedby="group-hint group-error"
           />
-          <datalist id="group-list"></datalist>
-          <span class="hint" id="group-hint">必填。可從清單選擇現有群組，或輸入新名稱（新名稱會先 create 再以官方 groupId 匯入）。不送 tags／skipQC／forceImport。</span>
-          <div class="api-row" style="margin-top:0.4rem">
-            <button type="button" class="btn btn-secondary" id="btn-probe-groups">測試讀取群組</button>
-          </div>
-          <pre class="conn-result" id="group-probe-result" aria-live="polite" hidden></pre>
+          <span class="hint" id="group-hint">必填。請從清單選擇現有群組，或輸入新名稱（新名稱會先 create 再以官方 groupId 匯入）。不送 tags／skipQC／forceImport。</span>
           <div id="group-create-extras" class="group-create-extras" hidden>
             <p class="hint">新群組需指定顏色與圖示編號（Central create 必填；不送 type）。</p>
             <label class="hint" for="group-color">顏色</label>
@@ -251,11 +159,127 @@
         tabindex="-1"
       ></div>
     </section>
+    <!-- faceme-local-only:admin:start -->
+    <section class="card admin-section" id="local-admin-root" data-local-only="1" aria-labelledby="admin-settings-heading">
+      <details id="admin-details" class="settings-details">
+        <summary id="admin-settings-heading" class="settings-summary">管理／設定（僅本機） <span class="settings-summary-hint">（預設收合，點此展開）</span></summary>
+        <div class="settings-body">
+          <p class="hint">① 瀏覽器→薄後端；② 薄後端→Central。變更 API base 會清除同意狀態。</p>
+          <h3 class="settings-sub">① 瀏覽器 → 薄後端（API base）</h3>
+          <p class="hint">存在 localStorage。姓名／照片只當次送到薄後端，前端不持久保存。GitHub Pages 無法打本機／Central。</p>
+          <label for="api-base-input">薄後端 API base</label>
+          <div class="api-row">
+            <input type="url" id="api-base-input" placeholder="留空＝Mock 預覽" autocomplete="off" spellcheck="false" />
+            <button type="button" class="btn btn-secondary" id="api-base-save">儲存</button>
+            <button type="button" class="btn btn-secondary" id="api-base-clear">Mock 預覽</button>
+            <button type="button" class="btn btn-secondary" id="api-base-same-origin">使用本機薄後端</button>
+          </div>
+          <div class="api-row" style="margin-top:0.5rem">
+            <button type="button" class="btn btn-secondary" id="btn-conn-test">連線測試（不寫入 Central）</button>
+            <button type="button" class="btn btn-secondary" id="btn-conn-login">連線＋登入測試（明確觸發）</button>
+          </div>
+          <pre class="conn-result" id="conn-test-result" aria-live="polite" hidden></pre>
+          <div class="api-status" id="api-base-status" aria-live="polite"></div>
+
+          <h3 class="settings-sub">② 薄後端 → FaceMe Central（FACEME_BASE_URL）</h3>
+          <p class="hint" id="central-base-hint">
+            寫入伺服器 <code>.env</code> 的 Central 位址（僅 https://主機或IP[:埠]）。帳密仍只在 .env，網頁<strong>不會</strong>顯示或讀取密碼。
+          </p>
+          <div id="central-base-local-only" class="preview-note" hidden>此區塊僅本機版（127.0.0.1）可用；GitHub Pages 無法修改 Central。</div>
+          <label for="central-base-input">Central 位址</label>
+          <div class="api-row">
+            <input type="url" id="central-base-input" placeholder="https://127.0.0.1 或 https://主機:埠" autocomplete="off" spellcheck="false" disabled />
+            <button type="button" class="btn btn-secondary" id="central-base-save" disabled>儲存 Central 位址</button>
+            <button type="button" class="btn btn-secondary" id="central-base-reload" disabled>重新載入</button>
+          </div>
+
+          <div class="api-status" id="central-base-status" aria-live="polite"></div>
+          <div class="skip-tls-row" id="skip-tls-row" hidden>
+            <label class="checkbox-row" for="skip-tls-toggle">
+              <input type="checkbox" id="skip-tls-toggle" disabled />
+              <span>略過自簽憑證檢查（僅限本機 Central）</span>
+            </label>
+            <p class="hint" id="skip-tls-hint">
+              僅當 Central 是 127.0.0.1／localhost／::1 時可開啟。有中間人風險；正式環境請匯入 CA。寫入 .env 的 FACEME_SKIP_TLS_VERIFY，立即生效。
+            </p>
+            <div class="api-status" id="skip-tls-status" aria-live="polite"></div>
+          </div>
+          <pre class="conn-result" id="env-diag-result" aria-live="polite" hidden></pre>
+
+          <div class="lan-access-row" id="lan-access-row" hidden>
+            <h3 class="settings-sub">③ 手機連線（區網，預設關閉）</h3>
+            <label class="checkbox-row" for="lan-access-toggle">
+              <input type="checkbox" id="lan-access-toggle" disabled />
+              <span>允許同一 Wi-Fi 的手機開啟此註冊頁</span>
+            </label>
+            <p class="hint" id="lan-access-hint">
+              僅能從本機（127.0.0.1）開關。開啟後伺服器改聽區網，手機用 <code>http://電腦區網IP:埠/</code> 開啟（Safari 用 HTTP 即可，拍照不需 HTTPS）。設定與 .env 仍只准本機修改。第一次開啟時 Windows 可能跳出「Windows 安全性警訊」，請只允許「私人網路」，不要勾選「公用網路」。用完請關閉。
+            </p>
+            <div id="lan-phone-urls" class="lan-phone-urls" hidden></div>
+            <div id="admin-phone-qr-codes" class="phone-qr-codes" hidden></div>
+            <div class="api-status" id="lan-access-status" aria-live="polite"></div>
+          </div>
+          <h3 class="settings-sub">測試讀取群組</h3>
+          <p class="hint">診斷用。註冊表單會在開啟時自動載入群組清單，不必按此按鈕。</p>
+          <div class="api-row">
+            <button type="button" class="btn btn-secondary" id="btn-probe-groups">測試讀取群組</button>
+          </div>
+          <pre class="conn-result" id="group-probe-result" aria-live="polite" hidden></pre>
+          <div id="person-admin-card" class="person-admin-block">
+            <h3 class="settings-sub">找人／補群組</h3>
+            <p class="hint">用來找出可能被移出群組後「失踪」的人，再補回群組。讀取不必開真實寫入；指定群組會寫入 Central，需雙旗標與確認。僅本機 127.0.0.1。</p>
+
+            <h3 class="settings-sub">列出未分群組的人</h3>
+            <p class="hint">呼叫 member/list 且不帶 groupId（Central 是否會回未分組的人，尚未實測）。</p>
+            <button type="button" class="btn btn-secondary" id="pa-list-btn">列出未分群組的人</button>
+            <div class="api-status" id="pa-list-status" aria-live="polite"></div>
+            <div id="pa-list-result" class="pa-result" hidden></div>
+            <pre class="conn-result" id="pa-list-raw" hidden></pre>
+
+            <h3 class="settings-sub">用編號查詢</h3>
+            <div class="api-row">
+              <label class="sr-only" for="pa-query-id">人員編號</label>
+              <input type="text" id="pa-query-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
+              <button type="button" class="btn btn-secondary" id="pa-query-btn">查詢</button>
+            </div>
+            <div class="api-status" id="pa-query-status" aria-live="polite"></div>
+            <div id="pa-query-result" class="pa-result" hidden></div>
+
+            <h3 class="settings-sub">範圍掃描（只讀）</h3>
+            <p class="hint">依序查詢編號 A 到 B（一次最多 200 個，略過不存在的編號），列出未分組／狀態不明的人。</p>
+            <div class="api-row">
+              <input type="text" id="pa-scan-from" inputmode="numeric" placeholder="從" autocomplete="off" />
+              <input type="text" id="pa-scan-to" inputmode="numeric" placeholder="到" autocomplete="off" />
+              <button type="button" class="btn btn-secondary" id="pa-scan-btn">範圍掃描</button>
+            </div>
+            <div class="api-status" id="pa-scan-status" aria-live="polite"></div>
+            <div id="pa-scan-result" class="pa-result" hidden></div>
+
+            <h3 class="settings-sub">指定群組（寫入 Central）</h3>
+            <p class="hint">對查到的人呼叫 person/update，只送 personId 與 groupId。需 FACEME_REAL_MODE 與法務確認皆為 1。</p>
+            <div class="api-row">
+              <input type="text" id="pa-assign-id" inputmode="numeric" placeholder="personId" autocomplete="off" />
+              <select id="pa-assign-group">
+                <option value="">選擇群組…</option>
+              </select>
+              <button type="button" class="btn btn-secondary" id="pa-assign-reload-groups">重新載入群組</button>
+              <button type="button" class="btn btn-primary" id="pa-assign-btn">指定群組</button>
+            </div>
+            <div class="api-status" id="pa-assign-status" aria-live="polite"></div>
+            <div id="pa-assign-result" class="pa-result" hidden></div>
+          </div>
+
+        </div>
+      </details>
+    </section>
+    <!-- faceme-local-only:admin:end -->
+
   </main>
 
   <footer class="app-footer" id="app-footer">
-    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09n
+    FaceMe 註冊預覽 · 純前端靜態頁 · 不串接 API · v2026-11-09o
   </footer>
+  <script src="vendor/qrcode-generator/qrcode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
